@@ -1,0 +1,19 @@
+# ============================================================
+# PersistentVolumeClaim — Datos de Traccar
+# Guarda: vehicle_records.json, forwarding_groups.json,
+#         media GPS, archivos de sesión, etc.
+# ============================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: traccar-data-pvc
+  namespace: traccar
+  labels:
+    app: traccar
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard-rwo   # GKE: standard-rwo | AWS: gp3 | Azure: managed-premium

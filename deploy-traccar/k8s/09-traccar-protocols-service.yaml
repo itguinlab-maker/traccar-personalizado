@@ -1,0 +1,44 @@
+# ============================================================
+# Service — Protocolos GPS (LoadBalancer con IP pública)
+#
+# Este servicio crea una IP pública en GKE para que los
+# dispositivos GPS (Streamax JT808/JT1078) se conecten.
+#
+# IMPORTANTE: Después de aplicar, obtener la IP con:
+#   kubectl get svc traccar-protocols -n traccar
+# Esa IP se configura en los dispositivos GPS (APN/servidor).
+#
+# NOTA: Los protocolos TCP/UDP no pueden ir por nginx-ingress,
+# por eso necesitan su propio LoadBalancer.
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: traccar-protocols
+  namespace: traccar
+  labels:
+    app: traccar
+  annotations:
+    # GKE: balanceador de carga externo estándar
+    networking.gke.io/load-balancer-type: "External"
+    # Opcional: IP estática pre-reservada en GCP (recomendado para no cambiar IP)
+    # kubernetes.io/ingress.global-static-ip-name: "traccar-protocols-ip"
+spec:
+  selector:
+    app: traccar
+  type: LoadBalancer
+  # externalTrafficPolicy: Local preserva la IP de origen del dispositivo
+  externalTrafficPolicy: Cluster
+  ports:
+    - name: jt808-tcp
+      port: 21081
+      targetPort: 21081
+      protocol: TCP
+    - name: jt808-udp
+      port: 21081
+      targetPort: 21081
+      protocol: UDP
+    - name: jt1078
+      port: 8400
+      targetPort: 8400
+      protocol: TCP

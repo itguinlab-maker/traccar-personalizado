@@ -2,11 +2,22 @@
 <!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
 <properties>
 
-    <!-- Documentation: https://www.traccar.org/configuration-file/ -->
+    <!-- Base de Datos -->
+    <entry key='database.driver'>org.postgresql.Driver</entry>
+    <entry key='database.url'>jdbc:postgresql://traccar-postgres:5432/traccar</entry>
+    <entry key='database.user'>traccar</entry>
+    <entry key='database.password'>traccar</entry>
 
-    <entry key='database.driver'>org.h2.Driver</entry>
-    <entry key='database.url'>jdbc:h2:./data/database</entry>
-    <entry key='database.user'>sa</entry>
-    <entry key='database.password' />
+    <!-- Protocolo JT808 -->
+    <entry key='jt808.port'>21081</entry>
+    <entry key='jt808.udp.port'>21081</entry>
+    <entry key='jt808.timezone'>America/Bogota</entry>
 
+    <!-- Interfaz Web y Logs (Cambiado a 'info' por seguridad) -->
+    <entry key='web.port'>8082</entry>
+    <entry key='logger.level'>info</entry>
+
+    <!-- Copiado de Atributos (Se eliminó la línea .enable que no es válida) -->
+    <entry key='processing.copyAttributes'>passengersOn,passengersOff,passengersOnFront,passengersOffFront,passengersOnRear,passengersOffRear</entry>
+    
 </properties>

@@ -1,0 +1,61 @@
+# ============================================================
+# Ingress — nginx con TLS (Let's Encrypt)
+#
+# Prerequisito: nginx-ingress-controller instalado en GKE.
+# Instalación (una sola vez):
+#   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+#   helm repo update
+#   helm install ingress-nginx ingress-nginx/ingress-nginx \
+#     --namespace ingress-nginx --create-namespace \
+#     --set controller.service.type=LoadBalancer
+#
+# IMPORTANTE:
+#   1. Cambiar traccar.tudominio.com por tu dominio real.
+#   2. Apuntar el DNS del dominio a la IP del nginx-ingress LoadBalancer:
+#      kubectl get svc -n ingress-nginx ingress-nginx-controller
+#   3. Usar letsencrypt-staging primero, cambiar a letsencrypt-prod cuando funcione.
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: traccar-ingress
+  namespace: traccar
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"   # ← usar staging para probar primero
+
+    # Timeouts largos para WebSocket (mapa en tiempo real) y descarga de vídeos
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+
+    # Tamaño máximo de cuerpo (subida de archivos, Excel)
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+
+    # Soporte WebSocket (mapa en tiempo real de Traccar)
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+
+    # Forzar HTTPS
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - traccar.tudominio.com   # ← cambiar por tu dominio
+      secretName: traccar-tls-cert
+  rules:
+    - host: traccar.tudominio.com   # ← cambiar por tu dominio
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: traccar-web
+                port:
+                  number: 80

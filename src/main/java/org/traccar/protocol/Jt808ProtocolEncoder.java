@@ -18,6 +18,8 @@ package org.traccar.protocol;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.traccar.BasePipelineFactory;
 import org.traccar.BaseProtocol;
 import org.traccar.BaseProtocolEncoder;
@@ -37,6 +39,7 @@ import java.util.Set;
 
 public class Jt808ProtocolEncoder extends BaseProtocolEncoder {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(Jt808ProtocolEncoder.class);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter
             .ofPattern("yyMMddHHmmss").withZone(ZoneId.systemDefault());
 
@@ -144,6 +147,30 @@ public class Jt808ProtocolEncoder extends BaseProtocolEncoder {
                     data.writeByte(0); // main stream
                     return decoder.formatMessage(
                             Jt808ProtocolDecoder.MSG_VIDEO_CONTROL, id, false, data);
+                case Command.TYPE_VIDEO_DOWNLOAD:
+                    LOGGER.info("VIDEOCLIP COMMAND encoding 0x9202 deviceId={}", command.getDeviceId());
+                    String dlHost = URI.create(getCacheManager().getConfig().getString(Keys.WEB_URL)).getHost();
+                    int dlPort = getCacheManager().getConfig().getInteger(
+                            Keys.PROTOCOL_PORT.withPrefix(BaseProtocol.nameFromClass(Jt1078Protocol.class)));
+                    String tzName = AttributeUtil.lookup(
+                            getCacheManager(), Keys.DECODER_TIMEZONE, command.getDeviceId());
+                    ZoneId zone = ZoneId.of(tzName != null ? tzName : "GMT-5");
+                    DateTimeFormatter bcdFmt = DateTimeFormatter.ofPattern("yyMMddHHmmss").withZone(zone);
+                    long startEpoch = command.getLong(Command.KEY_START_TIME);
+                    long endEpoch = command.getLong(Command.KEY_END_TIME);
+                    data.writeByte(dlHost.length());
+                    data.writeCharSequence(dlHost, StandardCharsets.US_ASCII);
+                    data.writeShort(dlPort);
+                    data.writeShort(0); // udp port
+                    data.writeByte(command.getInteger(Command.KEY_INDEX, 1)); // channel
+                    data.writeByte(1); // video only
+                    data.writeByte(0); // main storage
+                    data.writeBytes(DataConverter.parseHex(bcdFmt.format(Instant.ofEpochSecond(startEpoch))));
+                    data.writeBytes(DataConverter.parseHex(bcdFmt.format(Instant.ofEpochSecond(endEpoch))));
+                    LOGGER.info("VIDEOCLIP COMMAND 0x9202 host={}:{} ch={} start={} end={} tz={}",
+                            dlHost, dlPort, command.getInteger(Command.KEY_INDEX, 1), startEpoch, endEpoch, zone);
+                    return decoder.formatMessage(
+                            Jt808ProtocolDecoder.MSG_VIDEO_PLAYBACK, id, false, data);
                 default:
                     return null;
             }

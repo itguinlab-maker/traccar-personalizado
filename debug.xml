@@ -2,31 +2,34 @@
 <!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
 <properties>
 
-    <entry key='web.path'>./traccar-web/simple</entry>
+    <entry key='web.path'>./web</entry>
     <entry key='web.localizationPath'>./traccar-web/src/resources/l10n</entry>
     <entry key='web.debug'>true</entry>
     <entry key='web.console'>true</entry>
     <entry key='web.mcp.enable'>true</entry>
 
     <entry key='geocoder.type'>pluscodes</entry>
-
     <entry key='media.path'>./target/media</entry>
 
     <entry key='logger.console'>true</entry>
     <entry key='logger.queries'>false</entry>
     <entry key='logger.fullStackTraces'>true</entry>
+    <entry key='logger.level'>all</entry> <entry key='mail.debug'>true</entry>
 
-    <entry key='mail.debug'>true</entry>
-
-    <entry key='database.driver'>org.h2.Driver</entry>
-    <entry key='database.url'>jdbc:h2:./target/database</entry>
-    <entry key='database.user'>sa</entry>
-    <entry key='database.password' />
-
-    <!--<entry key='server.instantAcknowledgement'>true</entry>
-    <entry key='server.buffering.threshold'>5000</entry>-->
+    <entry key='database.driver'>org.postgresql.Driver</entry>
+    <entry key='database.url'>jdbc:postgresql://traccar-postgres:5432/traccar</entry>
+    <entry key='database.user'>traccar</entry>
+    <entry key='database.password'>traccar123</entry>
 
     <entry key='atrack.custom'>true</entry>
     <entry key='intellitrac.port'>6037</entry>
+
+    <entry key='jt808.port'>21081</entry>
+    <entry key='jt808.udp.port'>21081</entry>
+    <entry key='jt808.timezone'>America/Bogota</entry>
+
+    <entry key='web.url'>http://192.168.1.8:8082</entry>
+    <entry key='jt1078.port'>8400</entry>
+
 
 </properties>

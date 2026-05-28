@@ -1,0 +1,19 @@
+# ============================================================
+# Service — Interfaz web de Traccar (ClusterIP → expuesto por Ingress)
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: traccar-web
+  namespace: traccar
+  labels:
+    app: traccar
+spec:
+  selector:
+    app: traccar
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8082
+      protocol: TCP

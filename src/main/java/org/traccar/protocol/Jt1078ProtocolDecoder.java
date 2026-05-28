@@ -20,10 +20,13 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.traccar.BaseProtocolDecoder;
 import org.traccar.Protocol;
 import org.traccar.database.DeviceLookupService;
 import org.traccar.helper.BitUtil;
+import org.traccar.media.VideoClipManager;
 import org.traccar.media.VideoStreamManager;
 import org.traccar.model.Device;
 
@@ -32,8 +35,11 @@ import java.net.SocketAddress;
 
 public class Jt1078ProtocolDecoder extends BaseProtocolDecoder {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(Jt1078ProtocolDecoder.class);
+
     private DeviceLookupService deviceLookupService;
     private VideoStreamManager streamManager;
+    private VideoClipManager clipManager;
 
     private CompositeByteBuf frameBuffer;
     private int frameDataType;
@@ -55,6 +61,11 @@ public class Jt1078ProtocolDecoder extends BaseProtocolDecoder {
     @Inject
     public void setStreamManager(VideoStreamManager streamManager) {
         this.streamManager = streamManager;
+    }
+
+    @Inject
+    public void setClipManager(VideoClipManager clipManager) {
+        this.clipManager = clipManager;
     }
 
     @Override
@@ -91,6 +102,10 @@ public class Jt1078ProtocolDecoder extends BaseProtocolDecoder {
             return null;
         }
 
+        if (streamDeviceId != device.getId() || streamChannel != videoChannel) {
+            LOGGER.info("JT1078 FRAME deviceId={} uniqueId={} ch={} dataType={} subpkg={} bodyLen={}",
+                    device.getId(), uniqueId, videoChannel, dataType, subpackageType, bodyLength);
+        }
         streamDeviceId = device.getId();
         streamChannel = videoChannel;
 
@@ -99,6 +114,7 @@ public class Jt1078ProtocolDecoder extends BaseProtocolDecoder {
         if (subpackageType == 0) {
             boolean isKeyFrame = dataType == 0;
             streamManager.handleFrame(streamDeviceId, videoChannel, body, timestamp, isKeyFrame, payloadType);
+            clipManager.handleFrame(streamDeviceId, videoChannel, body, timestamp, isKeyFrame, payloadType);
             body.release();
         } else if (subpackageType == 1) {
             if (frameBuffer != null) {
@@ -120,6 +136,8 @@ public class Jt1078ProtocolDecoder extends BaseProtocolDecoder {
                 frameBuffer.addComponent(true, body);
                 boolean isKeyFrame = frameDataType == 0;
                 streamManager.handleFrame(
+                        streamDeviceId, videoChannel, frameBuffer, frameTimestamp, isKeyFrame, framePayloadType);
+                clipManager.handleFrame(
                         streamDeviceId, videoChannel, frameBuffer, frameTimestamp, isKeyFrame, framePayloadType);
                 frameBuffer.release();
                 frameBuffer = null;

@@ -1,0 +1,46 @@
+services:
+  traccar_server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: traccar_server
+    image: traccar_personalizado:latest
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+      - "21081:21081"
+      - "21081:21081/udp"
+      - "8400:8400"
+    volumes:
+      - traccar_data:/opt/traccar/data
+    networks:
+      - traccar-network
+    depends_on:
+      traccar-postgres:
+        condition: service_healthy
+
+  traccar-postgres:
+    image: postgres:16
+    container_name: traccar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: traccar
+      POSTGRES_USER: traccar
+      POSTGRES_PASSWORD: traccar123
+    volumes:
+      - /home/guin/traccar/postgres/data:/var/lib/postgresql/data
+    networks:
+      - traccar-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U traccar -d traccar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  traccar_data:
+    external: true
+
+networks:
+  traccar-network:
+    external: true

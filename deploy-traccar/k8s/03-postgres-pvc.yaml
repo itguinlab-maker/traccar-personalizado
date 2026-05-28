@@ -1,0 +1,19 @@
+# ============================================================
+# PersistentVolumeClaim — Base de datos PostgreSQL
+# storageClassName: "standard-rwo" es el SSD por defecto en GKE.
+# Ajustar según el proveedor de nube.
+# ============================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data-pvc
+  namespace: traccar
+  labels:
+    app: traccar-postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard-rwo   # GKE: standard-rwo | AWS: gp3 | Azure: managed-premium

@@ -1,0 +1,124 @@
+# ============================================================
+# Deployment — Traccar Personalizado
+# IMPORTANTE: Reemplazar la imagen con la tuya en Artifact Registry:
+#   REGION-docker.pkg.dev/TU_PROYECTO/traccar/traccar-personalizado:TAG
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traccar
+  namespace: traccar
+  labels:
+    app: traccar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traccar
+  strategy:
+    type: Recreate   # PVC ReadWriteOnce → no rolling updates
+  template:
+    metadata:
+      labels:
+        app: traccar
+    spec:
+      terminationGracePeriodSeconds: 60
+
+      # Esperar a que PostgreSQL esté listo antes de arrancar Traccar
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Esperando PostgreSQL en traccar-postgres:5432..."
+              until nc -z traccar-postgres 5432; do
+                echo "  PostgreSQL no disponible aún, reintentando en 3s..."
+                sleep 3
+              done
+              echo "PostgreSQL disponible."
+
+      containers:
+        - name: traccar
+          # ↓ Cambiar por la imagen publicada en tu Artifact Registry / GCR
+          image: REGION-docker.pkg.dev/TU_PROYECTO_GCP/traccar/traccar-personalizado:latest
+
+          env:
+            - name: DB_HOST
+              value: "traccar-postgres"
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: traccar-db-secret
+                  key: db-name
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: traccar-db-secret
+                  key: db-user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: traccar-db-secret
+                  key: db-password
+            # Opcional: JVM tuning
+            - name: JAVA_OPTS
+              value: "-Xms256m -Xmx1g -XX:+UseG1GC"
+
+          ports:
+            - name: web
+              containerPort: 8082
+              protocol: TCP
+            - name: jt808-tcp
+              containerPort: 21081
+              protocol: TCP
+            - name: jt808-udp
+              containerPort: 21081
+              protocol: UDP
+            - name: jt1078
+              containerPort: 8400
+              protocol: TCP
+
+          volumeMounts:
+            # Datos persistentes (vehicle_records.json, etc.)
+            - name: traccar-data
+              mountPath: /opt/traccar/data
+            # Template de configuración (sustituido por docker-entrypoint.sh)
+            - name: traccar-config
+              mountPath: /etc/traccar-config
+              readOnly: true
+
+          livenessProbe:
+            httpGet:
+              path: /api/server
+              port: 8082
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /api/server
+              port: 8082
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+
+      volumes:
+        - name: traccar-data
+          persistentVolumeClaim:
+            claimName: traccar-data-pvc
+        - name: traccar-config
+          configMap:
+            name: traccar-config

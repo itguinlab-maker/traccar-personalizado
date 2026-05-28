@@ -1,0 +1,37 @@
+# ============================================================
+# ConfigMap — Template de configuración de Traccar
+# Las variables ${...} son sustituidas por docker-entrypoint.sh
+# usando los valores de los Secrets montados como env vars.
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traccar-config
+  namespace: traccar
+data:
+  traccar.xml.tpl: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+    <properties>
+
+        <!-- Base de Datos (PostgreSQL) -->
+        <entry key='database.driver'>org.postgresql.Driver</entry>
+        <entry key='database.url'>jdbc:postgresql://${DB_HOST}:5432/${DB_NAME}</entry>
+        <entry key='database.user'>${DB_USER}</entry>
+        <entry key='database.password'>${DB_PASSWORD}</entry>
+
+        <!-- Protocolo JT808 (dispositivos GPS Streamax) -->
+        <entry key='jt808.port'>21081</entry>
+        <entry key='jt808.udp.port'>21081</entry>
+        <entry key='jt808.timezone'>America/Bogota</entry>
+
+        <!-- Interfaz Web -->
+        <entry key='web.port'>8082</entry>
+
+        <!-- Logs (usar 'warning' en producción para reducir volumen) -->
+        <entry key='logger.level'>info</entry>
+
+        <!-- Atributos que se propagan entre posiciones (conteo de pasajeros) -->
+        <entry key='processing.copyAttributes'>passengersOn,passengersOff,passengersOnFront,passengersOffFront,passengersOnRear,passengersOffRear</entry>
+
+    </properties>

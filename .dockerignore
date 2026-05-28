@@ -1,0 +1,7 @@
+.git
+.gradle
+build
+traccar-web/node_modules
+traccar-web/dist
+traccar-web/build
+*.log

@@ -1,0 +1,66 @@
+# ============================================================
+# Docker Compose — Despliegue LOCAL
+# Uso:
+#   docker compose -f deploy-traccar/docker-compose.local.yml up -d
+# ============================================================
+
+services:
+
+  # ── Traccar personalizado ─────────────────────────────────
+  traccar:
+    build:
+      context: ..                           # raíz del proyecto
+      dockerfile: deploy-traccar/Dockerfile
+    image: traccar-personalizado:local
+    container_name: traccar_server
+    restart: unless-stopped
+    environment:
+      DB_HOST: traccar-postgres
+      DB_NAME: traccar
+      DB_USER: traccar
+      DB_PASSWORD: traccar123
+    ports:
+      - "8082:8082"        # Interfaz web
+      - "21081:21081"      # JT808 TCP
+      - "21081:21081/udp"  # JT808 UDP
+      - "8400:8400"        # JT1078 vídeo
+    volumes:
+      - traccar_data:/opt/traccar/data
+    networks:
+      - traccar-net
+    depends_on:
+      traccar-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/api/server || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── PostgreSQL 16 ─────────────────────────────────────────
+  traccar-postgres:
+    image: postgres:16
+    container_name: traccar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: traccar
+      POSTGRES_USER: traccar
+      POSTGRES_PASSWORD: traccar123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - traccar-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U traccar -d traccar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  traccar_data:
+  postgres_data:
+
+networks:
+  traccar-net:
+    driver: bridge

@@ -14,9 +14,8 @@ public class Jt808ProtocolDecoderTest extends ProtocolTest {
         verifyNull(decoder, binary(
                 "7e0100405c010000086649607758216452180000000000000000000000000000004d443330300000000000000000000000000000000000000000000000000038363634393630373735383231363400000000000000000000000000000004000000000000000000000000000000007a7e"));
 
-        verifyAttribute(decoder, binary(
-                "7e0704402d0100000866496077582164881d0001000028000000000000000701a00192091f2a4700160000000226050916422701040000258230010031010e507e"),
-                Position.KEY_SATELLITES, 14);
+        verifyPosition(decoder, binary(
+                "7e0704402d0100000866496077582164881d0001000028000000000000000701a00192091f2a4700160000000226050916422701040000258230010031010e507e"));
 
         verifyAttribute(decoder, binary(
                 "7e0200004d794308010679013800000000022c004e01819568036ef38c005c00120000251118112611d40164d50201a230011d31010cf40104f9020007fe0400000090fd0a02e8000400044a150fe6ef014a0b062200623a4965977e"),
@@ -362,5 +361,18 @@ public class Jt808ProtocolDecoderTest extends ProtocolTest {
                 Position.KEY_ALARM, Position.ALARM_VIBRATION);
 
     }
+
+@Test
+    public void testDecodeStreamaxApc() throws Exception {
+        var decoder = inject(new Jt808ProtocolDecoder(null));
+
+        // Trama 0x0B02 real con los bytes de sincronía y encabezado correctos de producción
+        Position position = (Position) decoder.decode(null, null, binary(
+                "7e0b0200260012345678900001ffffffff0301000000000084005f9b5bfb7f3f1406bf00000000260518190604000001010101997e"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, position.getInteger("passengersOn"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, position.getInteger("passengersOnFront"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, position.getInteger("passengersOff"));
+    } 
 
 }

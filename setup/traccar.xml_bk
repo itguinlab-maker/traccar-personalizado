@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM 'http://java.sun.com/dtd/properties.dtd'>
+<properties>
+
+    <entry key='database.driver'>org.postgresql.Driver</entry>
+    <entry key='database.url'>jdbc:postgresql://traccar-postgres:5432/traccar</entry>
+    <entry key='database.user'>traccar</entry>
+    <entry key='database.password'>traccar</entry> 
+
+    <entry key='jt808.port'>21081</entry>
+    <entry key='jt808.udp.port'>21081</entry>
+
+    <entry key='web.port'>8082</entry>
+    <entry key='logger.level'>all</entry>
+
+    <entry key='processing.copyAttributes'>passengersOn passengersOff</entry>
+
+</properties>

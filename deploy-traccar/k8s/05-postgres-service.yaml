@@ -1,0 +1,19 @@
+# ============================================================
+# Service — PostgreSQL (ClusterIP, solo accesible internamente)
+# Nombre del servicio = nombre de host que usa Traccar en traccar.xml
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: traccar-postgres
+  namespace: traccar
+  labels:
+    app: traccar-postgres
+spec:
+  selector:
+    app: traccar-postgres
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

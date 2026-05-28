@@ -19,10 +19,13 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.traccar.BaseProtocolDecoder;
 import org.traccar.helper.BufferUtil;
 import org.traccar.model.WifiAccessPoint;
 import org.traccar.session.DeviceSession;
+import org.traccar.model.Device;
 import org.traccar.NetworkMessage;
 import org.traccar.Protocol;
 import org.traccar.helper.BcdUtil;
@@ -49,6 +52,8 @@ import java.util.Set;
 import java.util.TimeZone;
 
 public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(Jt808ProtocolDecoder.class);
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter
             .ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
@@ -86,6 +91,9 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
     public static final int MSG_DRIVER_IDENTITY = 0x0702;
     public static final int MSG_VIDEO_REQUEST = 0x9101;
     public static final int MSG_VIDEO_CONTROL = 0x9102;
+    public static final int MSG_VIDEO_PLAYBACK = 0x9202;
+    public static final int MSG_STREAMAX_COUNTING = 0x0B19;
+    public static final int MSG_VIDEO_PLATFORM_MSG = 0x0b02;
 
     public static final int RESULT_SUCCESS = 0;
 
@@ -334,7 +342,7 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
         }
 
         if (!deviceSession.contains(DeviceSession.KEY_TIMEZONE)) {
-            deviceSession.set(DeviceSession.KEY_TIMEZONE, getTimeZone(deviceSession.getDeviceId(), "GMT+8"));
+            deviceSession.set(DeviceSession.KEY_TIMEZONE, getTimeZone(deviceSession.getDeviceId(), "GMT-5"));
         }
 
         if (type == MSG_TERMINAL_REGISTER) {
@@ -390,6 +398,7 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
 
             sendGeneralResponse(channel, remoteAddress, id, type, index);
 
+            LOGGER.debug("GPS [0x0200] trama de posición");
             return decodeLocation(deviceSession, buf);
 
         } else if (type == MSG_LOCATION_REPORT_2 || type == MSG_LOCATION_REPORT_BLIND) {
@@ -404,7 +413,17 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
 
             sendGeneralResponse(channel, remoteAddress, id, type, index);
 
-            return decodeLocationBatch(deviceSession, buf, type);
+            List<Position> positions = decodeLocationBatch(deviceSession, buf, type);
+            if (positions.isEmpty()) {
+                return null;
+            }
+            return positions.size() == 1 ? positions.get(0) : positions;
+
+        } else if (type == MSG_VIDEO_PLATFORM_MSG || type == MSG_STREAMAX_COUNTING) {
+
+            sendGeneralResponse(channel, remoteAddress, id, type, index);
+
+            return decodeStreamaxCounting(deviceSession, buf, type);
 
         } else if (type == MSG_TIME_SYNC_REQUEST) {
 
@@ -485,6 +504,9 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
 
             return position;
 
+        } else {
+            LOGGER.info("JT808 trama desconocida tipo=0x{} bytes={}",
+                    String.format("%04X", type), buf.readableBytes());
         }
 
         return null;
@@ -500,6 +522,201 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
             return position;
         }
         return null;
+    }
+
+    // === MÉTODOS DE APOYO PARA ANALÍTICA STREAMAX APC ===
+
+    private Date readBcdDate(ByteBuf buf, int startIndex, TimeZone timeZone) {
+        ByteBuf slice = buf.slice(startIndex, 6);
+        return new DateBuilder(timeZone)
+                .setYear(BcdUtil.readInteger(slice, 2))
+                .setMonth(BcdUtil.readInteger(slice, 2))
+                .setDay(BcdUtil.readInteger(slice, 2))
+                .setHour(BcdUtil.readInteger(slice, 2))
+                .setMinute(BcdUtil.readInteger(slice, 2))
+                .setSecond(BcdUtil.readInteger(slice, 2)).getDate();
+    }
+
+    /**
+     * Localiza dinámicamente el offset del campo BCD Date dentro del payload APC.
+     *
+     * Motivo (hallazgo de ingeniería inversa): el offset del BCD Date NO es fijo.
+     * Cambió entre firmwares / modos de configuración del MDVR (alarma vs evento).
+     * En lugar de asumir una posición fija (que rompía el decoder al cambiar la
+     * config del equipo), buscamos un patrón de fecha BCD válido: año 20xx,
+     * mes 01-12, día 01-31, hora 00-23, minuto/segundo 00-59.
+     *
+     * @return el índice absoluto del primer BCD Date válido, o -1 si no se halla.
+     */
+    private int findBcdDateIndex(ByteBuf buf, int from, int to) {
+        for (int i = from; i + 6 <= to; i++) {
+            int yh = buf.getUnsignedByte(i);          // 0x20 esperado (año 20xx en BCD)
+            int mon = bcdByte(buf.getUnsignedByte(i + 1));
+            int day = bcdByte(buf.getUnsignedByte(i + 2));
+            int hour = bcdByte(buf.getUnsignedByte(i + 3));
+            int min = bcdByte(buf.getUnsignedByte(i + 4));
+            int sec = bcdByte(buf.getUnsignedByte(i + 5));
+            if (yh == 0x20 || yh == 0x26 || yh == 0x25 || yh == 0x27) {
+                if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31
+                        && hour <= 23 && min <= 59 && sec <= 59) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** Convierte un byte BCD (ej. 0x59) a su valor decimal (59). */
+    private int bcdByte(int b) {
+        return ((b >> 4) & 0x0F) * 10 + (b & 0x0F);
+    }
+
+    /**
+     * Decodifica los mensajes propietarios Streamax APC (conteo de pasajeros).
+     *
+     * MODELO: DELTAS PUROS (verificado contra logs de campo).
+     *
+     * Cada mensaje 0x0B02 representa UN evento físico y publica únicamente el
+     * DELTA de ese evento: cuántos pasajeros subieron y bajaron en esa ráfaga.
+     * El decoder NO acumula y NO consulta la caché. La suma del periodo
+     * (totales diarios/semanales/mensuales) la realiza la capa de reportes
+     * (página GeneralCountingPage.jsx) sumando los deltas de todas las posiciones.
+     *
+     * Ventajas de este modelo frente al acumulado:
+     *  - Coherencia: totales y desglose por puerta se calculan igual (suma de
+     *    deltas), por lo que siempre cuadran entre sí.
+     *  - Robustez: un reinicio del servidor o de la caché no corrompe el conteo;
+     *    cada evento es autónomo e idempotente.
+     *  - Sin condición de carrera: el 0x0B19 ya no puede "pisar" un acumulado
+     *    porque no existe acumulado que pisar.
+     *
+     * Tramas:
+     *  - 0x0B02 (evento real): publica passengersOn/Off (delta del evento) y el
+     *    desglose por puerta passengersOn{Front,Rear}/Off{Front,Rear}.
+     *    Estructura útil: [BCD Date(6)] ... [On en BCD+10] [Off en BCD+11].
+     *  - 0x0B19 (estadístico): ECO/cierre del 0x0B02 anterior. NO publica
+     *    contadores: solo deja una marca de estado. Si publicara, duplicaría el
+     *    conteo del evento (verificado: trae los mismos valores que el 0x0B02).
+     *
+     * El odómetro flash del hardware (tags 41/42 de la trama 0x0200) se descarta
+     * en decodeLocation(): está casi siempre congelado y no aporta al conteo.
+     */
+    private Position decodeStreamaxCounting(DeviceSession deviceSession, ByteBuf buf, int type) {
+        Position position = new Position(getProtocolName());
+        position.setDeviceId(deviceSession.getDeviceId());
+
+        // Heredar la última ubicación GPS conocida
+        getLastLocation(position, null);
+
+        // Traza original para auditoría / ingeniería inversa
+        position.set("streamax.type", String.format("0x%04X", type));
+        position.set("streamax.raw", ByteBufUtil.hexDump(buf));
+
+        int base = buf.readerIndex();
+        int limit = base + buf.readableBytes();
+        // El BCD Date se busca dinámicamente: su offset cambia entre firmwares.
+        int bcdIndex = findBcdDateIndex(buf, base, limit);
+
+        if (type == MSG_VIDEO_PLATFORM_MSG) {
+            // 0x0B02: EVENTO REAL. Publica el DELTA del evento (no acumula).
+            if (bcdIndex >= 0 && bcdIndex + 12 <= limit) {
+
+                // Tiempo real del evento (slice aislado: no mueve el readerIndex)
+                position.setTime(readBcdDate(buf, bcdIndex, deviceSession.get(DeviceSession.KEY_TIMEZONE)));
+
+                // On/Off en BCD+10 / BCD+11 (offsets verificados contra logs de campo).
+                // getUnsignedByte aísla el byte bajo: el firmware llega a reportar
+                // "flags" (ej. 257) en vez del valor limpio (1).
+                int eventOn = buf.getUnsignedByte(bcdIndex + 10);
+                int eventOff = buf.getUnsignedByte(bcdIndex + 11);
+
+                // doorId real en BCD+9 (DESCUBRIMIENTO VERIFICADO contra el
+                // Operation Log del MDVR Streamax). Anteriormente se leía el
+                // byte +6, que siempre vale 0 (ese es el "Channel ID" lógico
+                // del MDVR, no la puerta física). El byte +9 sí codifica la
+                // puerta: en pruebas reportó 1 cuando el OpLog decía "Door1"
+                // y 2 cuando decía "Door2". El byte +8 parece ser otro
+                // identificador (probablemente cámara/canal IP, siempre 1).
+                int rawDoorId = buf.getUnsignedByte(bcdIndex + 9);
+                int channelId = buf.getUnsignedByte(bcdIndex + 8);
+
+                // Override por device attribute: permite forzar el mapeo de
+                // puerta cuando el MDVR está mal configurado y reporta todo
+                // como una sola puerta. Valores admitidos del atributo
+                // "apc.forceDoor": "front" o "rear". Cualquier otro valor
+                // (incluido ausente) deja el mapeo en modo automático.
+                String overrideDoor = null;
+                if (getCacheManager() != null) {
+                    Device dev = getCacheManager().getObject(
+                            Device.class, deviceSession.getDeviceId());
+                    if (dev != null && dev.hasAttribute("apc.forceDoor")) {
+                        overrideDoor = dev.getString("apc.forceDoor");
+                    }
+                }
+
+                String suffix;
+                if ("front".equalsIgnoreCase(overrideDoor)) {
+                    suffix = "Front";
+                } else if ("rear".equalsIgnoreCase(overrideDoor)) {
+                    suffix = "Rear";
+                } else {
+                    // Modo automático: doorId del byte +9 mapea directo.
+                    //   1 → puerta delantera (Front)
+                    //   2 → puerta trasera  (Rear)
+                    //   0 → fallback a Front (no hubo evento físico identificado)
+                    //   3+ → fallback a Rear (puerta adicional no soportada aún)
+                    suffix = (rawDoorId <= 1) ? "Front" : "Rear";
+                }
+
+                // passengersOn/Off = DELTA de este evento (lo que la página suma).
+                position.set("passengersOn", eventOn);
+                position.set("passengersOff", eventOff);
+
+                // Desglose por puerta, también como delta de este evento.
+                position.set("passengersOn" + suffix, eventOn);
+                position.set("passengersOff" + suffix, eventOff);
+
+                // Trazabilidad. Se publica tanto el doorId crudo de la trama
+                // como el efectivo tras override, para que el operador pueda
+                // ver en la interfaz si el override está actuando.
+                position.set("streamax.doorId", rawDoorId);
+                position.set("streamax.channelId", channelId);
+                position.set("streamax.doorEffective", suffix.toLowerCase());
+                if (overrideDoor != null) {
+                    position.set("streamax.doorOverride", overrideDoor.toLowerCase());
+                }
+                position.set("streamax.eventOn", eventOn);
+                position.set("streamax.eventOff", eventOff);
+                position.set("streamax.status", "counting_event");
+
+                LOGGER.info("APC EVENTO [0x0B02] puerta={} on={} off={} fix={}",
+                        suffix.toLowerCase(), eventOn, eventOff,
+                        position.getFixTime() != null
+                                ? DATE_FORMAT.format(position.getFixTime().toInstant()) : "?");
+
+            } else {
+                // No se pudo localizar el BCD Date: payload corto o estructura nueva.
+                // No se publican contadores para no inyectar un delta falso.
+                position.set("streamax.status", "payload_too_short_or_unknown");
+                LOGGER.info("APC [0x0B02] payload_too_short_or_unknown raw={}",
+                        ByteBufUtil.hexDump(buf, buf.readerIndex(), 0).isEmpty()
+                                ? "(vacío)" : ByteBufUtil.hexDump(buf));
+            }
+
+        } else if (type == MSG_STREAMAX_COUNTING) {
+            // 0x0B19: ECO/cierre del evento 0x0B02. Es un reporte de estado.
+            //
+            // NO publica passengersOn/passengersOff. Si lo hiciera, la página
+            // sumaría dos veces el mismo evento (el 0x0B19 trae los mismos valores
+            // que el 0x0B02 que lo precede). Solo deja una marca de estado.
+            position.set("streamax.status", "statistical_report");
+            LOGGER.info("APC ESTADÍSTICO [0x0B19] (sin conteo — solo referencia)");
+
+        } else {
+            position.set("streamax.status", "unknown_message");
+        }
+
+        return position;
     }
 
     private void decodeExtension(Position position, ByteBuf buf, int endIndex) {
@@ -661,10 +878,36 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
                     position.set(Position.PREFIX_ADC + 2, buf.readUnsignedShort() / 100.0);
                     break;
                 case 0x30:
-                    position.set(Position.KEY_RSSI, buf.readUnsignedByte());
+                    // Streamax APC: NO es passengersOn. Hallazgo de ingeniería inversa:
+                    // es un estado de IA / señal del sensor. Comprobado que su byte
+                    // cambia sin correlación con el flujo real de pasajeros. Se ignora.
+                    buf.skipBytes(length);
                     break;
                 case 0x31:
-                    position.set(Position.KEY_SATELLITES, buf.readUnsignedByte());
+                    // Streamax APC: NO es passengersOff. Mismo caso que 0x30: estado
+                    // de IA / señal, no contador. Permaneció fijo durante eventos
+                    // reales en las pruebas de campo. Se ignora.
+                    buf.skipBytes(length);
+                    break;
+                case 0x41:
+                    // Streamax APC: odómetro hardware de entradas. El MDVR lo
+                    // actualiza al cerrar cada puerta (no en tiempo real), por lo que
+                    // dentro de un evento puede estar ligeramente rezagado, pero al
+                    // final de cada ciclo de puerta refleja el acumulado correcto.
+                    // Se publica bajo streamax.odometerOn para que el frontend pueda
+                    // calcular el delta del período (último - primero) como fuente de
+                    // validación cruzada frente a la suma de eventos 0x0B02.
+                    // NO sobreescribe passengersOn: ese lo calcula decodeStreamaxCounting().
+                    position.set("streamax.odometerOn", buf.readUnsignedShort());
+                    break;
+                case 0x42:
+                    // Streamax APC: odómetro hardware de salidas. Mismo tratamiento
+                    // que 0x41: se publica como streamax.odometerOff para validación,
+                    // sin pisar el contador real passengersOff.
+                    position.set("streamax.odometerOff", buf.readUnsignedShort());
+                    break;
+                case 0x43:
+                    buf.skipBytes(length);
                     break;
                 case 0x33:
                     if (length == 1) {
