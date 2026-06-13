@@ -95,8 +95,13 @@ public class VideoClipManager {
         }
         ClipSession session = sessionsById.get(clipId);
         if (session != null) {
-            session.markReady();
-            LOGGER.info("VIDEOCLIP FINALIZED key={} clipId={} bytes={}", deviceKey, clipId, session.getData().readableBytes());
+            if (session.getStatus() == ClipStatus.PENDING) {
+                session.markError();
+                LOGGER.warn("VIDEOCLIP NO FRAMES RECEIVED key={} clipId={} — device did not stream back", deviceKey, clipId);
+            } else {
+                session.markReady();
+                LOGGER.info("VIDEOCLIP FINALIZED key={} clipId={} bytes={}", deviceKey, clipId, session.getData().readableBytes());
+            }
         }
     }
 
@@ -149,6 +154,12 @@ public class VideoClipManager {
         synchronized void markReady() {
             if (status == ClipStatus.PENDING || status == ClipStatus.RECORDING) {
                 status = ClipStatus.READY;
+            }
+        }
+
+        synchronized void markError() {
+            if (status == ClipStatus.PENDING || status == ClipStatus.RECORDING) {
+                status = ClipStatus.ERROR;
             }
         }
 

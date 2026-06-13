@@ -13,8 +13,15 @@
     <entry key='jt808.udp.port'>21081</entry>
     <entry key='jt808.timezone'>America/Bogota</entry>
 
+    <!-- JT1078 video histórico por celular (SIM/NAT)
+         IP a la que el MDVR conecta para enviar el video (puerto 8400).
+         En local: IP del servidor en la red local.
+         En producción: reemplazar por la IP pública del servidor en la nube. -->
+    <entry key='jt1078.serverHost'>192.168.1.8</entry>
+
     <!-- Interfaz Web y Logs (Cambiado a 'info' por seguridad) -->
     <entry key='web.port'>8082</entry>
+    <entry key='web.url'>https://m2ffzvn2-8082.use.devtunnels.ms</entry>
     <entry key='logger.level'>info</entry>
 
     <!-- Copiado de Atributos (Se eliminó la línea .enable que no es válida) -->

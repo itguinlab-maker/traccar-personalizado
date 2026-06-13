@@ -18,6 +18,8 @@ package org.traccar.api.resource;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.ByteBuf;
 import jakarta.inject.Inject;
+import org.traccar.config.Config;
+import org.traccar.config.Keys;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -87,6 +89,9 @@ public class MdvrClipResource extends BaseResource {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Inject
+    private Config config;
+
+    @Inject
     private VideoClipManager clipManager;
 
     @Inject
@@ -124,8 +129,8 @@ public class MdvrClipResource extends BaseResource {
         Device device = storage.getObject(Device.class, new Request(
                 new Columns.All(), new Condition.Equals("id", deviceId)));
 
-        boolean hasIp = !ipOverride.isBlank()
-                || (device != null && device.getAttributes().containsKey("mdvrIp"));
+        boolean useJt1078 = config.hasKey(Keys.JT1078_SERVER_HOST)
+                || "jt1078".equalsIgnoreCase(device != null ? device.getString("mdvrMode", "") : "");
 
         String mdvrIp = (!ipOverride.isBlank())
                 ? ipOverride
@@ -151,8 +156,8 @@ public class MdvrClipResource extends BaseResource {
         String mdvrTo   = localFmt.format(toInstant).replace(" ", "%20");
         LOGGER.info("MDVR time window: {} → {} ({} s)", mdvrFrom, mdvrTo, clipSeconds);
 
-        if (!hasIp) {
-            LOGGER.info("MDVR no IP configured — using JT1078 path for deviceId={}", deviceId);
+        if (useJt1078) {
+            LOGGER.info("MDVR mdvrMode=jt1078 — using JT1078 path for deviceId={}", deviceId);
             return downloadViaJt1078(deviceId, channel, fromInstant, toInstant, clipSeconds, plate, door, mdvrZone);
         }
 
@@ -568,13 +573,15 @@ public class MdvrClipResource extends BaseResource {
             status = clipManager.getStatus(clipId);
         } while (status != null
                 && status != VideoClipManager.ClipStatus.READY
+                && status != VideoClipManager.ClipStatus.ERROR
                 && System.currentTimeMillis() < deadline);
 
         if (status != VideoClipManager.ClipStatus.READY) {
             clipManager.removeSession(clipId);
-            LOGGER.warn("JT1078 CLIP timeout/no-response deviceId={} clipId={} status={}", deviceId, clipId, status);
+            LOGGER.warn("JT1078 CLIP failed deviceId={} clipId={} status={}", deviceId, clipId, status);
             return Response.status(Response.Status.GATEWAY_TIMEOUT)
-                    .entity("El dispositivo no respondió con video (JT1078)").build();
+                    .entity("El dispositivo no respondió con video. Verifica que jt1078.serverHost "
+                            + "esté configurado con la IP pública del servidor en traccar.xml").build();
         }
 
         ByteBuf buf = clipManager.getClipData(clipId);

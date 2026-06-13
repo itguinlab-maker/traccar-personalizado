@@ -2072,6 +2072,15 @@ public final class Keys {
             List.of(KeyType.CONFIG));
 
     /**
+     * Public hostname or IP sent to JT1078 devices in the 0x9202 video-download command,
+     * so they can connect back to the server over the internet (e.g. from a SIM card).
+     * When not set, the host is extracted from web.url.
+     */
+    public static final ConfigKey<String> JT1078_SERVER_HOST = new StringConfigKey(
+            "jt1078.serverHost",
+            List.of(KeyType.CONFIG));
+
+    /**
      * Show logs from unknown devices.
      */
     public static final ConfigKey<Boolean> WEB_SHOW_UNKNOWN_DEVICES = new BooleanConfigKey(

@@ -149,7 +149,9 @@ public class Jt808ProtocolEncoder extends BaseProtocolEncoder {
                             Jt808ProtocolDecoder.MSG_VIDEO_CONTROL, id, false, data);
                 case Command.TYPE_VIDEO_DOWNLOAD:
                     LOGGER.info("VIDEOCLIP COMMAND encoding 0x9202 deviceId={}", command.getDeviceId());
-                    String dlHost = URI.create(getCacheManager().getConfig().getString(Keys.WEB_URL)).getHost();
+                    String dlHost = getCacheManager().getConfig().hasKey(Keys.JT1078_SERVER_HOST)
+                            ? getCacheManager().getConfig().getString(Keys.JT1078_SERVER_HOST)
+                            : URI.create(getCacheManager().getConfig().getString(Keys.WEB_URL)).getHost();
                     int dlPort = getCacheManager().getConfig().getInteger(
                             Keys.PROTOCOL_PORT.withPrefix(BaseProtocol.nameFromClass(Jt1078Protocol.class)));
                     String tzName = AttributeUtil.lookup(
