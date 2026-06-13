@@ -19,5 +19,8 @@
 
     <!-- Copiado de Atributos (Se eliminó la línea .enable que no es válida) -->
     <entry key='processing.copyAttributes'>passengersOn,passengersOff,passengersOnFront,passengersOffFront,passengersOnRear,passengersOffRear</entry>
-    
+
+    <!-- Tiempo máximo sin actividad antes de marcar dispositivo como desconocido (segundos) -->
+    <entry key='deviceTimeout'>3600</entry>
+
 </properties>

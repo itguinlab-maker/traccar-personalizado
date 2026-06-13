@@ -131,7 +131,7 @@ public class MdvrClipResource extends BaseResource {
 
         Instant fromInstant = Instant.parse(fromIso);
         Instant toInstant   = Instant.parse(toIso);
-        long clipSeconds    = Math.min(65, Math.max(1, Duration.between(fromInstant, toInstant).getSeconds()));
+        long clipSeconds    = Math.min(60, Math.max(1, Duration.between(fromInstant, toInstant).getSeconds()));
 
         DateTimeFormatter localFmt = LOCAL_FMT.withZone(mdvrZone);
         String mdvrFrom = localFmt.format(fromInstant).replace(" ", "%20");
@@ -197,90 +197,81 @@ public class MdvrClipResource extends BaseResource {
         }
 
         int targetChannel = channel - 1; // MDVR is 0-based, caller is 1-based
-        Map<String, Object> segment = findSegment(periodBody, targetChannel);
-        if (segment == null) {
-            LOGGER.warn("MDVR no segment for channel {} in: {}", targetChannel, periodResp.body());
+        List<Map<String, Object>> segments = findAllSegments(periodBody, targetChannel);
+        if (segments.isEmpty()) {
+            LOGGER.warn("MDVR no segments for channel {} in: {}", targetChannel, periodResp.body());
             return Response.status(Response.Status.NOT_FOUND)
                     .entity("No hay grabación para el canal " + channel + " en ese rango de tiempo")
                     .build();
         }
+        LOGGER.info("MDVR found {} segment(s) for channel {}", segments.size(), targetChannel);
 
-        int hddId  = ((Number) segment.get("hddid")).intValue();
-        int rootId = ((Number) segment.get("rootindex")).intValue();
-        int segId  = ((Number) segment.get("streamsegmentindex")).intValue();
-        String segStartRaw = (String) segment.get("starttime");
+        List<String> downloadUrls = new java.util.ArrayList<>();
+        for (Map<String, Object> segment : segments) {
+            int hddId  = ((Number) segment.get("hddid")).intValue();
+            int rootId = ((Number) segment.get("rootindex")).intValue();
+            int segId  = ((Number) segment.get("streamsegmentindex")).intValue();
+            String url = baseUrl + "/devapi/v1/basic/videodownload"
+                    + "?recordtype=2&streamtype=0"
+                    + "&hddId=" + hddId
+                    + "&rootId=" + rootId
+                    + "&streamSegId=" + segId
+                    + "&starttime=" + mdvrFrom
+                    + "&endtime=" + mdvrTo
+                    + "&periodId=" + hddId + "-" + rootId + "-" + segId
+                    + keyParam;
+            downloadUrls.add(url);
+            LOGGER.info("MDVR segment hddId={} rootId={} segId={} url={}", hddId, rootId, segId, url);
+        }
 
-        Instant segStartInstant = LocalDateTime
-                .parse(segStartRaw, LOCAL_FMT)
-                .atZone(mdvrZone)
-                .toInstant();
-        long seekSeconds = Math.max(0, Duration.between(segStartInstant, fromInstant).getSeconds());
-        LOGGER.info("MDVR segment hddId={} rootId={} segId={} segStart={} seekOffset={}s",
-                hddId, rootId, segId, segStartRaw, seekSeconds);
+        final HttpClient        finalHttp     = http;
+        final List<String>      finalUrls     = downloadUrls;
+        final String            finalBaseUrl  = baseUrl;
+        final long              finalClipSecs = clipSeconds;
 
-        // ── 3. Build download URL ─────────────────────────────────────────────────
-        String downloadUrl = baseUrl + "/devapi/v1/basic/videodownload"
-                + "?recordtype=2&streamtype=0"
-                + "&hddId=" + hddId
-                + "&rootId=" + rootId
-                + "&streamSegId=" + segId
-                + "&starttime=" + mdvrFrom
-                + "&endtime=" + mdvrTo
-                + "&periodId=" + hddId + "-" + rootId + "-" + segId
-                + keyParam;
-        LOGGER.info("MDVR download url={}", downloadUrl);
-
-        final HttpClient finalHttp     = http;
-        final String     finalDownload = downloadUrl;
-        final String     finalBaseUrl  = baseUrl;
-        final long       finalClipSecs = clipSeconds;
-
-        // ── 4. Stream: filter NALs → ffmpeg → MP4 ────────────────────────────────
+        // ── 4. Stream ALL segments: filter NALs → ffmpeg → MP4 ───────────────────
         StreamingOutput out = output -> {
-            HttpResponse<InputStream> videoResp;
-            try {
-                videoResp = finalHttp.send(
-                        HttpRequest.newBuilder(URI.create(finalDownload))
-                                .POST(HttpRequest.BodyPublishers.noBody())
-                                .header("Referer", finalBaseUrl + "/pages/playback/default.html")
-                                .timeout(Duration.ofSeconds(300))
-                                .build(),
-                        HttpResponse.BodyHandlers.ofInputStream());
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Interrupted connecting to MDVR", ie);
-            }
-            LOGGER.info("MDVR raw download status={} content-type={} encoder-type={}",
-                    videoResp.statusCode(),
-                    videoResp.headers().firstValue("content-type").orElse("?"),
-                    videoResp.headers().firstValue("encoder-type").orElse("?"));
-
             java.nio.file.Path tmpFile = Files.createTempFile("mdvr_clip_", ".mp4");
             try {
                 ProcessBuilder pb = new ProcessBuilder(
                         "ffmpeg",
-                        "-f", "h264", "-i", "pipe:0",
+                        "-f", "h264", "-r", "30", "-i", "pipe:0",
                         "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
-                        "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p",
-                        "-c:a", "aac", "-b:a", "32k",
-                        "-t", String.valueOf(finalClipSecs),
-                        "-shortest",
+                        "-c:v", "copy",
+                        "-c:a", "aac", "-b:a", "32k", "-t", String.valueOf(finalClipSecs),
                         "-movflags", "+faststart",
                         "-y", tmpFile.toString()
                 );
 
                 Process ffmpeg = pb.start();
 
-                // Feed filtered H.264 to ffmpeg stdin in a background thread
+                // Feed ALL segments sequentially into ffmpeg stdin
                 Thread pipeThread = new Thread(() -> {
-                    try (InputStream mdvrStream = new BufferedInputStream(videoResp.body(), 65536);
-                         OutputStream ffIn = ffmpeg.getOutputStream()) {
-                        byte[] spsStart = skipToSps(mdvrStream);
-                        if (spsStart == null) {
-                            LOGGER.error("H.264 SPS not found in MDVR stream");
-                            return;
+                    try (OutputStream ffIn = ffmpeg.getOutputStream()) {
+                        for (String segUrl : finalUrls) {
+                            HttpResponse<InputStream> videoResp;
+                            try {
+                                videoResp = finalHttp.send(
+                                        HttpRequest.newBuilder(URI.create(segUrl))
+                                                .POST(HttpRequest.BodyPublishers.noBody())
+                                                .header("Referer", finalBaseUrl + "/pages/playback/default.html")
+                                                .timeout(Duration.ofSeconds(300))
+                                                .build(),
+                                        HttpResponse.BodyHandlers.ofInputStream());
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                            LOGGER.info("MDVR seg download status={}", videoResp.statusCode());
+                            try (InputStream mdvrStream = new BufferedInputStream(videoResp.body(), 65536)) {
+                                byte[] spsStart = skipToSps(mdvrStream);
+                                if (spsStart == null) {
+                                    LOGGER.warn("H.264 SPS not found in segment, skipping");
+                                    continue;
+                                }
+                                streamFilteredNals(spsStart, mdvrStream, ffIn);
+                            }
                         }
-                        streamFilteredNals(spsStart, mdvrStream, ffIn);
                     } catch (IOException e) {
                         String msg = e.getMessage();
                         if (msg == null || (!msg.contains("Broken pipe") && !msg.contains("Stream closed"))) {
@@ -509,20 +500,21 @@ public class MdvrClipResource extends BaseResource {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> findSegment(Map<String, Object> body, int targetChannel) {
+    private List<Map<String, Object>> findAllSegments(Map<String, Object> body, int targetChannel) {
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
         Object data = body.get("data");
         if (!(data instanceof List<?> list)) {
-            return null;
+            return result;
         }
         for (Object item : list) {
             if (item instanceof Map<?, ?> seg) {
                 Object ch = seg.get("channel");
                 if (ch instanceof Number && ((Number) ch).intValue() == targetChannel) {
-                    return (Map<String, Object>) seg;
+                    result.add((Map<String, Object>) seg);
                 }
             }
         }
-        return null;
+        return result;
     }
 
     private static String enc(String value) {

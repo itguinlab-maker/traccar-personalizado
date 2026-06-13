@@ -7,6 +7,13 @@ import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.traccar.forwarding.ExternalForwardingManager;
+import org.traccar.model.Device;
+import org.traccar.model.Group;
+import org.traccar.storage.Storage;
+import org.traccar.storage.StorageException;
+import org.traccar.storage.query.Columns;
+import org.traccar.storage.query.Condition;
+import org.traccar.storage.query.Request;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -15,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -26,6 +34,7 @@ public class VehicleService {
 
     private final ObjectMapper objectMapper;
     private final ExternalForwardingManager forwardingManager;
+    private final Storage storage;
 
     // id → record
     private final Map<String, VehicleRecord> records = new ConcurrentHashMap<>();
@@ -33,9 +42,10 @@ public class VehicleService {
     private final Map<Long, String> deviceIndex = new ConcurrentHashMap<>();
 
     @Inject
-    public VehicleService(ObjectMapper objectMapper, ExternalForwardingManager forwardingManager) {
+    public VehicleService(ObjectMapper objectMapper, ExternalForwardingManager forwardingManager, Storage storage) {
         this.objectMapper = objectMapper;
         this.forwardingManager = forwardingManager;
+        this.storage = storage;
         load();
     }
 
@@ -56,6 +66,7 @@ public class VehicleService {
         }
         save();
         syncForwardingGroup(record.getCompany());
+        syncDeviceGroup(record.getDeviceId(), record.getCompany());
         return record;
     }
 
@@ -64,11 +75,11 @@ public class VehicleService {
         if (existing == null) {
             return Optional.empty();
         }
-        // Update device index
         if (existing.getDeviceId() > 0) {
             deviceIndex.remove(existing.getDeviceId());
         }
         String oldCompany = existing.getCompany();
+        long oldDeviceId = existing.getDeviceId();
 
         updated.setId(id);
         records.put(id, updated);
@@ -77,11 +88,16 @@ public class VehicleService {
         }
         save();
 
-        // Sync forwarding groups for old company and (if changed) new company
         syncForwardingGroup(oldCompany);
         if (updated.getCompany() != null && !updated.getCompany().equals(oldCompany)) {
             syncForwardingGroup(updated.getCompany());
         }
+
+        // Si cambió el dispositivo o la empresa, limpiar el groupId del dispositivo anterior
+        if (oldDeviceId > 0 && (oldDeviceId != updated.getDeviceId() || !Objects.equals(oldCompany, updated.getCompany()))) {
+            syncDeviceGroup(oldDeviceId, null);
+        }
+        syncDeviceGroup(updated.getDeviceId(), updated.getCompany());
         return Optional.of(updated);
     }
 
@@ -95,7 +111,39 @@ public class VehicleService {
         }
         save();
         syncForwardingGroup(record.getCompany());
+        syncDeviceGroup(record.getDeviceId(), null);
         return true;
+    }
+
+    // Asigna el dispositivo al grupo de Traccar cuyo nombre coincide con la empresa.
+    // Si company es null o vacío, limpia el groupId (queda sin grupo).
+    private void syncDeviceGroup(long deviceId, String company) {
+        if (deviceId <= 0) {
+            return;
+        }
+        try {
+            long groupId = 0;
+            if (company != null && !company.isBlank()) {
+                List<Group> groups = storage.getObjects(Group.class, new Request(
+                        new Columns.All(),
+                        new Condition.Equals("name", company)));
+                if (!groups.isEmpty()) {
+                    groupId = groups.get(0).getId();
+                } else {
+                    LOGGER.warn("VEHICLE no existe grupo de Traccar con nombre '{}', el dispositivo {} no se asignará", company, deviceId);
+                    return;
+                }
+            }
+            Device device = new Device();
+            device.setId(deviceId);
+            device.setGroupId(groupId);
+            storage.updateObject(device, new Request(
+                    new Columns.Include("groupId"),
+                    new Condition.Equals("id", deviceId)));
+            LOGGER.info("VEHICLE dispositivo {} asignado a groupId={} (empresa='{}')", deviceId, groupId, company);
+        } catch (StorageException e) {
+            LOGGER.warn("VEHICLE error al sincronizar groupId del dispositivo {}: {}", deviceId, e.getMessage());
+        }
     }
 
     private void syncForwardingGroup(String company) {

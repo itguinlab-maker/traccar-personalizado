@@ -34,4 +34,7 @@ data:
         <!-- Atributos que se propagan entre posiciones (conteo de pasajeros) -->
         <entry key='processing.copyAttributes'>passengersOn,passengersOff,passengersOnFront,passengersOffFront,passengersOnRear,passengersOffRear</entry>
 
+        <!-- Tiempo máximo sin actividad antes de marcar dispositivo como desconocido (segundos) -->
+        <entry key='deviceTimeout'>3600</entry>
+
     </properties>

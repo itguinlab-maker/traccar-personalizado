@@ -29,6 +29,7 @@ COPY target/tracker-server.jar .
 COPY target/lib ./lib
 COPY schema ./schema
 COPY templates ./templates
+COPY debug.xml .
 
 # Frontend Traccar (necesario para rutas /simple y similares)
 COPY traccar-web ./traccar-web

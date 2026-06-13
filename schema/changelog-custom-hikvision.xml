@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+  xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.4.xsd"
+  logicalFilePath="changelog-custom-hikvision">
+
+  <changeSet author="custom" id="changelog-custom-hikvision-events">
+
+    <preConditions onFail="MARK_RAN">
+      <not>
+        <tableExists tableName="tc_hikvision_events" />
+      </not>
+    </preConditions>
+
+    <createTable tableName="tc_hikvision_events">
+      <column name="id" type="BIGINT" autoIncrement="true">
+        <constraints primaryKey="true" />
+      </column>
+      <column name="deviceid" type="BIGINT">
+        <constraints nullable="false" />
+      </column>
+      <column name="eventtime" type="TIMESTAMP">
+        <constraints nullable="false" />
+      </column>
+      <column name="channel" type="INT" defaultValueNumeric="1">
+        <constraints nullable="false" />
+      </column>
+      <column name="enter" type="INT" defaultValueNumeric="0">
+        <constraints nullable="false" />
+      </column>
+      <column name="exit" type="INT" defaultValueNumeric="0">
+        <constraints nullable="false" />
+      </column>
+    </createTable>
+
+    <createIndex tableName="tc_hikvision_events" indexName="idx_hikvision_events_deviceid">
+      <column name="deviceid" />
+    </createIndex>
+
+    <createIndex tableName="tc_hikvision_events" indexName="idx_hikvision_events_eventtime">
+      <column name="eventtime" />
+    </createIndex>
+
+  </changeSet>
+
+</databaseChangeLog>

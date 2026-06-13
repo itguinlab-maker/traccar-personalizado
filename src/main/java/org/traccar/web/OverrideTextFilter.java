@@ -77,9 +77,9 @@ public class OverrideTextFilter implements Filter {
                     throw new RuntimeException(e);
                 }
 
-                String title = server.getString("title", "Traccar");
-                String description = server.getString("description", "Traccar GPS Tracking System");
-                String colorPrimary = server.getString("colorPrimary", "#1a237e");
+                String title = server.getString("title", "CCTV-GLAB");
+                String description = server.getString("description", "CCTV-GLAB — Plataforma de Gestión de Flota");
+                String colorPrimary = server.getString("colorPrimary", "#6EF7FF");
 
                 String alteredContent = new String(wrappedResponse.getCapture(), StandardCharsets.UTF_8)
                         .replace("${title}", title)

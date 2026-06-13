@@ -1,0 +1,78 @@
+# ============================================================
+# Docker Compose — RECUPERACIÓN DE DESASTRE
+# Usa la imagen publicada en Docker Hub (no requiere código fuente).
+#
+# Pasos de recuperación en un servidor nuevo:
+#   1. Instalar Docker
+#   2. Crear volúmenes externos:
+#        docker volume create traccar_postgres_data
+#        docker volume create traccar_app_data
+#   3. Restaurar backup de postgres (si tienes uno):
+#        docker compose -f docker-compose.recovery.yml up -d traccar-postgres
+#        docker exec -i traccar-postgres psql -U traccar traccar < backup.sql
+#   4. Levantar el stack completo:
+#        docker compose -f docker-compose.recovery.yml up -d
+# ============================================================
+
+name: traccar
+
+services:
+
+  # ── Traccar personalizado (desde Docker Hub) ──────────────
+  traccar:
+    image: itguinlab-maker/traccar_personalizado:latest
+    container_name: traccar_server
+    restart: unless-stopped
+    environment:
+      DB_HOST: traccar-postgres
+      DB_NAME: traccar
+      DB_USER: traccar
+      DB_PASSWORD: traccar123
+    ports:
+      - "8082:8082"        # Interfaz web
+      - "21081:21081"      # JT808 TCP
+      - "21081:21081/udp"  # JT808 UDP
+      - "18400:8400"       # JT1078 vídeo
+    volumes:
+      - traccar_app_data:/opt/traccar/data
+    networks:
+      - traccar-net
+    depends_on:
+      traccar-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/api/server || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── PostgreSQL 16 ─────────────────────────────────────────
+  traccar-postgres:
+    image: postgres:16
+    container_name: traccar-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: traccar
+      POSTGRES_USER: traccar
+      POSTGRES_PASSWORD: traccar123
+    volumes:
+      - traccar_postgres_data:/var/lib/postgresql/data
+    networks:
+      - traccar-net
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U traccar -d traccar -c 'SELECT 1' -q --no-psqlrc 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+volumes:
+  traccar_postgres_data:
+    external: true
+  traccar_app_data:
+    external: true
+
+networks:
+  traccar-net:
+    driver: bridge

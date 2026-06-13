@@ -41,8 +41,7 @@ spec:
 
       containers:
         - name: traccar
-          # ↓ Cambiar por la imagen publicada en tu Artifact Registry / GCR
-          image: REGION-docker.pkg.dev/TU_PROYECTO_GCP/traccar/traccar-personalizado:latest
+          image: itguinlab-maker/traccar_personalizado:latest
 
           env:
             - name: DB_HOST

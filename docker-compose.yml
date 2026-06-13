@@ -44,3 +44,4 @@ volumes:
 networks:
   traccar-network:
     external: true
+    name: traccar-network

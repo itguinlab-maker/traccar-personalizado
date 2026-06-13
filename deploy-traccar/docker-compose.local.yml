@@ -1,8 +1,11 @@
 # ============================================================
 # Docker Compose — Despliegue LOCAL
-# Uso:
-#   docker compose -f deploy-traccar/docker-compose.local.yml up -d
+# Primer uso: ejecutar deploy-traccar/setup-local.ps1 (crea volúmenes externos)
+# Actualizar:  deploy-traccar/update-local.ps1
+# NUNCA usar: docker compose down -v  (no borra externos, pero evitar el hábito)
 # ============================================================
+
+name: traccar
 
 services:
 
@@ -23,9 +26,9 @@ services:
       - "8082:8082"        # Interfaz web
       - "21081:21081"      # JT808 TCP
       - "21081:21081/udp"  # JT808 UDP
-      - "8400:8400"        # JT1078 vídeo
+      - "18400:8400"       # JT1078 vídeo (Windows reserva 8368-8567, usar 18400 en local)
     volumes:
-      - traccar_data:/opt/traccar/data
+      - traccar_app_data:/opt/traccar/data   # external: nunca lo borra compose
     networks:
       - traccar-net
     depends_on:
@@ -42,24 +45,30 @@ services:
   traccar-postgres:
     image: postgres:16
     container_name: traccar-postgres
-    restart: unless-stopped
+    restart: always                          # always: sobrevive reboots del host
     environment:
       POSTGRES_DB: traccar
       POSTGRES_USER: traccar
       POSTGRES_PASSWORD: traccar123
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - traccar_postgres_data:/var/lib/postgresql/data  # external: nunca lo borra compose
     networks:
       - traccar-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U traccar -d traccar"]
+      test: ["CMD-SHELL", "psql -U traccar -d traccar -c 'SELECT 1' -q --no-psqlrc 2>/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 60s
 
+# ── Volúmenes externos ────────────────────────────────────────
+# external: true = este compose NO los crea NI los borra nunca
+# Creados por setup-local.ps1. Solo se eliminan con: docker volume rm <nombre>
 volumes:
-  traccar_data:
-  postgres_data:
+  traccar_postgres_data:
+    external: true
+  traccar_app_data:
+    external: true
 
 networks:
   traccar-net:
