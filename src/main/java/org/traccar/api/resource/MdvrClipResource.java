@@ -16,6 +16,8 @@
 package org.traccar.api.resource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.netty.buffer.ByteBuf;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -26,6 +28,9 @@ import jakarta.ws.rs.core.StreamingOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.traccar.api.BaseResource;
+import org.traccar.database.CommandsManager;
+import org.traccar.media.VideoClipManager;
+import org.traccar.model.Command;
 import org.traccar.model.Device;
 import org.traccar.storage.query.Columns;
 import org.traccar.storage.query.Condition;
@@ -48,7 +53,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -82,6 +86,12 @@ public class MdvrClipResource extends BaseResource {
     private static final Logger LOGGER = LoggerFactory.getLogger(MdvrClipResource.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    @Inject
+    private VideoClipManager clipManager;
+
+    @Inject
+    private CommandsManager commandsManager;
+
     private static final DateTimeFormatter LOCAL_FMT =
             DateTimeFormatter.ofPattern("yy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter FILENAME_FMT =
@@ -114,6 +124,9 @@ public class MdvrClipResource extends BaseResource {
         Device device = storage.getObject(Device.class, new Request(
                 new Columns.All(), new Condition.Equals("id", deviceId)));
 
+        boolean hasIp = !ipOverride.isBlank()
+                || (device != null && device.getAttributes().containsKey("mdvrIp"));
+
         String mdvrIp = (!ipOverride.isBlank())
                 ? ipOverride
                 : (device != null ? device.getString("mdvrIp", "192.168.1.11") : "192.168.1.11");
@@ -137,6 +150,11 @@ public class MdvrClipResource extends BaseResource {
         String mdvrFrom = localFmt.format(fromInstant).replace(" ", "%20");
         String mdvrTo   = localFmt.format(toInstant).replace(" ", "%20");
         LOGGER.info("MDVR time window: {} → {} ({} s)", mdvrFrom, mdvrTo, clipSeconds);
+
+        if (!hasIp) {
+            LOGGER.info("MDVR no IP configured — using JT1078 path for deviceId={}", deviceId);
+            return downloadViaJt1078(deviceId, channel, fromInstant, toInstant, clipSeconds, plate, door, mdvrZone);
+        }
 
         String baseUrl = "http://" + mdvrIp;
 
@@ -519,5 +537,107 @@ public class MdvrClipResource extends BaseResource {
 
     private static String enc(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    // ── JT1078 path (device behind NAT / SIM card) ───────────────────────────
+
+    /**
+     * Downloads historical video by sending a JT808 0x9202 command to the device.
+     * The device streams the video back via JT1078 (device-initiated, NAT-friendly).
+     * Waits synchronously for the clip, then converts MPEG-TS → MP4 via ffmpeg.
+     */
+    private Response downloadViaJt1078(long deviceId, int channel, Instant from, Instant to,
+            long durationSeconds, String plate, String door, ZoneId zone) throws Exception {
+
+        String clipId = clipManager.createSession(deviceId, channel, durationSeconds);
+        LOGGER.info("JT1078 CLIP deviceId={} ch={} from={} to={} clipId={}", deviceId, channel, from, to, clipId);
+
+        Command command = new Command();
+        command.setDeviceId(deviceId);
+        command.setType(Command.TYPE_VIDEO_DOWNLOAD);
+        command.set(Command.KEY_INDEX, channel);
+        command.set(Command.KEY_START_TIME, from.getEpochSecond());
+        command.set(Command.KEY_END_TIME, to.getEpochSecond());
+        commandsManager.sendCommand(command);
+
+        // Wait for device to stream the clip back via JT1078
+        long deadline = System.currentTimeMillis() + (durationSeconds + 30) * 1000L;
+        VideoClipManager.ClipStatus status;
+        do {
+            Thread.sleep(1000);
+            status = clipManager.getStatus(clipId);
+        } while (status != null
+                && status != VideoClipManager.ClipStatus.READY
+                && System.currentTimeMillis() < deadline);
+
+        if (status != VideoClipManager.ClipStatus.READY) {
+            clipManager.removeSession(clipId);
+            LOGGER.warn("JT1078 CLIP timeout/no-response deviceId={} clipId={} status={}", deviceId, clipId, status);
+            return Response.status(Response.Status.GATEWAY_TIMEOUT)
+                    .entity("El dispositivo no respondió con video (JT1078)").build();
+        }
+
+        ByteBuf buf = clipManager.getClipData(clipId);
+        if (buf == null || buf.readableBytes() == 0) {
+            clipManager.removeSession(clipId);
+            return Response.status(Response.Status.NO_CONTENT).build();
+        }
+        byte[] tsBytes = new byte[buf.readableBytes()];
+        buf.getBytes(buf.readerIndex(), tsBytes);
+        clipManager.removeSession(clipId);
+
+        // Convert MPEG-TS → MP4
+        java.nio.file.Path tmpFile = Files.createTempFile("jt1078_clip_", ".mp4");
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                    "ffmpeg", "-i", "pipe:0",
+                    "-c", "copy",
+                    "-movflags", "+faststart",
+                    "-y", tmpFile.toString());
+            Process ffmpeg = pb.start();
+
+            Thread pipeThread = new Thread(() -> {
+                try (OutputStream out = ffmpeg.getOutputStream()) {
+                    out.write(tsBytes);
+                } catch (IOException e) {
+                    String msg = e.getMessage();
+                    if (msg == null || (!msg.contains("Broken pipe") && !msg.contains("Stream closed"))) {
+                        LOGGER.warn("JT1078 piper: {}", msg);
+                    }
+                }
+            });
+            pipeThread.setName("jt1078-piper");
+            pipeThread.start();
+
+            Thread errThread = new Thread(() -> {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(ffmpeg.getErrorStream()))) {
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        LOGGER.info("ffmpeg(jt1078): {}", line);
+                    }
+                } catch (IOException ignored) { }
+            });
+            errThread.setDaemon(true);
+            errThread.start();
+
+            int exit = ffmpeg.waitFor();
+            pipeThread.join(5000);
+            LOGGER.info("JT1078 CLIP ffmpeg exit={} fileSize={}", exit, Files.size(tmpFile));
+
+            byte[] mp4 = Files.readAllBytes(tmpFile);
+
+            String safePlate = plate.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
+            String safeDoor  = door.replaceAll("[^A-Za-z0-9]", "");
+            String dateStr   = FILENAME_FMT.withZone(zone).format(from);
+            String filename  = (safePlate.isEmpty() ? "mdvr" : safePlate)
+                    + "_" + safeDoor + "_" + dateStr + ".mp4";
+
+            return Response.ok(mp4)
+                    .type("video/mp4")
+                    .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                    .build();
+        } finally {
+            Files.deleteIfExists(tmpFile);
+        }
     }
 }
