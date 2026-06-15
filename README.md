@@ -175,7 +175,7 @@ Ver guía completa en [deploy-traccar/deploy-local.md](deploy-traccar/deploy-loc
 .\deploy-traccar\update-local.ps1   # incluye push si estás logueado en ghcr.io
 
 # 2. En la VM de producción (34.61.186.60)
-ssh usuario@34.61.186.60
+ssh USUARIO@34.61.186.60
 docker pull ghcr.io/itguinlab-maker/traccar_personalizado:latest
 docker compose -f deploy-traccar/docker-compose.local.yml up -d --no-deps --force-recreate traccar
 ```

@@ -185,6 +185,7 @@ docker tag traccar-personalizado:local ghcr.io/itguinlab-maker/traccar_personali
 docker push ghcr.io/itguinlab-maker/traccar_personalizado:latest
 
 # 2. En la VM (34.61.186.60) — via SSH
+ssh -i "$HOME\.ssh\google_compute_engine" USUARIO@34.61.186.60
 docker pull ghcr.io/itguinlab-maker/traccar_personalizado:latest
-docker compose -f deploy-traccar/docker-compose.local.yml up -d --no-deps --force-recreate traccar
+cd ~/traccar && docker compose up -d --no-deps --force-recreate traccar
 ```
