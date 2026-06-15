@@ -177,15 +177,52 @@ docker compose -f deploy-traccar/docker-compose.local.yml up -d
 
 ## Deploy a producción (VM GCloud)
 
-Una vez verificado localmente:
+**VM:** `34.61.186.60` — GCloud  
+**Usuario SSH:** `USUARIO`  
+**Clave SSH:** `~/.ssh/google_compute_engine`  
+**Docker Compose en VM:** `~/traccar/docker-compose.yml`  
+**Imagen:** `ghcr.io/itguinlab-maker/traccar_personalizado:latest`
+
+### Flujo completo (desde Windows)
 
 ```powershell
-# 1. Push a GHCR (ya incluido en update-local.ps1)
+# 1. Compilar JAR
+.\gradlew.bat assemble -x test
+
+# 2. Construir imagen local
+docker build --no-cache -f deploy-traccar/Dockerfile -t traccar-personalizado:local .
+
+# 3. Etiquetar y subir a GHCR
 docker tag traccar-personalizado:local ghcr.io/itguinlab-maker/traccar_personalizado:latest
 docker push ghcr.io/itguinlab-maker/traccar_personalizado:latest
 
-# 2. En la VM (34.61.186.60) — via SSH
-ssh -i "$HOME\.ssh\google_compute_engine" USUARIO@34.61.186.60
-docker pull ghcr.io/itguinlab-maker/traccar_personalizado:latest
-cd ~/traccar && docker compose up -d --no-deps --force-recreate traccar
+# 4. Conectarse a la VM y actualizar el contenedor
+ssh -i "$HOME\.ssh\google_compute_engine" USUARIO@34.61.186.60 "cd ~/traccar && docker pull ghcr.io/itguinlab-maker/traccar_personalizado:latest && docker compose up -d --no-deps --force-recreate traccar"
+
+# 5. Verificar estado
+ssh -i "$HOME\.ssh\google_compute_engine" USUARIO@34.61.186.60 "docker ps --filter name=traccar_server --format '{{.Names}} {{.Status}}'"
 ```
+
+> Los pasos 1–3 ya están automatizados en `update-local.ps1`. Solo se necesita ejecutar el paso 4 manualmente después.
+
+### Solo actualizar contenedor (si la imagen ya está en GHCR)
+
+```powershell
+ssh -i "$HOME\.ssh\google_compute_engine" USUARIO@34.61.186.60 "cd ~/traccar && docker pull ghcr.io/itguinlab-maker/traccar_personalizado:latest && docker compose up -d --no-deps --force-recreate traccar"
+```
+
+### Verificar logs en producción
+
+```powershell
+ssh -i "$HOME\.ssh\google_compute_engine" USUARIO@34.61.186.60 "docker logs traccar_server --tail=50"
+```
+
+### Estructura de archivos en la VM
+
+```
+~/traccar/
+├── docker-compose.yml   # stack (traccar_server + traccar-postgres)
+└── traccar.xml          # configuración del servidor
+```
+
+Los datos persisten en volúmenes Docker nombrados (`traccar_app_data`, `traccar_postgres_data`), no en el sistema de archivos del host.
