@@ -1,66 +1,258 @@
-# Documentación Técnica: Integración Streamax APC (Passenger Counting) en Traccar
+# Documentación Técnica: Integración Streamax APC + Hikvision en Traccar
 
-Este documento resume el trabajo de ingeniería inversa y personalización realizado para integrar el conteo de pasajeros de un MDVR Streamax utilizando el protocolo JT808 extendido.
+Este documento describe la ingeniería inversa, implementación y personalización del sistema de conteo de pasajeros para dispositivos Streamax MDVR (JT808/APC) y cámaras Hikvision integrados en Traccar.
 
-## 1. Contexto del Hardware
-- **Dispositivo:** MDVR Streamax con cámaras IA de conteo de pasajeros (APC).
-- **Protocolo Base:** JT808 (Realiza handshake y ACKs estándar).
-- **Identificador:** Terminal Phone ID (BCD) de 10 o 6 bytes.
+---
 
-## 2. Análisis del Protocolo APC
-Se identificaron dos fuentes de verdad para la telemetría de conteo:
+## 1. Hardware y Protocolos
 
-### A. Trama de Posición Estándar (0x0200)
-El MDVR inyecta atributos adicionales (Extensiones) al final de la trama GPS:
-- **ID 0x41 (2 bytes):** Acumulado global de entradas (`passengersOn`). Mapeado como `streamax.odometerOn`.
-- **ID 0x42 (2 bytes):** Acumulado global de salidas (`passengersOff`). Mapeado como `streamax.odometerOff`.
-- **ID 0x30/0x31:** Ignorados (en Streamax no representan conteo real sino estados de IA/Señal).
+| Dispositivo | Protocolo base | Notas |
+|---|---|---|
+| Streamax MDVR | JT808 extendido | Conteo APC vía mensaje propietario `0x0B02` |
+| Cámaras Hikvision | API HTTP propia | Contadores acumulativos por canal |
 
-### B. Mensajes Propietarios de Eventos (0x0B02)
-Reportes instantáneos generados físicamente al detectar movimiento en las puertas:
-- **Estructura Útil (12 bytes al final):** `[BCD Date (6)] [DoorID (1)] [On (2)] [Type (1)] [Off (2)]`.
-- **DoorId 0 o 1:** Puerta Delantera (Sufijo `Front`).
-- **DoorId 2:** Puerta Trasera (Sufijo `Rear`).
-- **Valores:** Se detectó un comportamiento de "flags" (ej. 257 en lugar de 1), solucionado aislando el byte bajo mediante `getUnsignedByte`.
+**Conectividad de los MDVR:**
+- SIM TIGO (red móvil): no tienen IP pública accesible desde internet
+- WiFi en depósito: IP local accesible para descarga directa de vídeo
+- La conexión JT808 TCP es **device-initiated** y permanece abierta → es el canal de control para descargas por celular
 
-## 3. Implementación en el Backend (Java)
-Archivo: `Jt808ProtocolDecoder.java`
+---
 
-### Mejoras Críticas:
-1.  **BCD Date Fix:** Uso de `buf.slice(startIndex, 6)` para evitar desalineación del puntero de lectura global y prevenir `IndexOutOfBoundsException`.
-2.  **Lógica de Memoria (Persistence):**
-    - Implementación de consulta al `CacheManager` (Traccar 6.x).
-    - **Software Odometer Priority:** El decoder prioriza la llave `passengersOn` calculada por Traccar sobre `streamax.odometerOn` reportada por el hardware en 0x0200.
-    - Esto evita que los reportes GPS periódicos (con valores estáticos) sobreescriban los incrementos reales detectados en los eventos 0x0B02.
-    - El mensaje 0x0B19 (Estadístico) actúa como reporte de estado sin forzar re-cálculos si ya existe una posición reciente.
-3.  **Retorno Inteligente:** Para compatibilidad con tests unitarios, el método `decode` devuelve una `Position` directa si el tamaño de la lista es 1, o la `List` completa si es un reporte por lotes.
+## 2. Protocolo Streamax APC (JT808)
 
-## 4. Configuración del Servidor
-Archivo: `traccar.xml`
+### 2.1 Trama de Posición Estándar (0x0200)
 
-Para asegurar que los datos no se pierdan entre reportes GPS (0x0200) y eventos (0x0B02), se activó la copia de atributos:
+El MDVR inyecta extensiones al final de la trama GPS:
+
+| ID | Bytes | Atributo Traccar | Descripción |
+|---|---|---|---|
+| `0x41` | 2 | `streamax.odometerOn` | Acumulado global de entradas |
+| `0x42` | 2 | `streamax.odometerOff` | Acumulado global de salidas |
+| `0x30`/`0x31` | — | Ignorados | Estados de IA/señal, no conteo real |
+
+**Prioridad de atributos:** el decoder prioriza `passengersOn` calculado por Traccar (via `CacheManager`) sobre `streamax.odometerOn` del hardware, para evitar que los GPS periódicos sobreescriban los incrementos reales del evento `0x0B02`.
+
+### 2.2 Eventos de Conteo (0x0B02)
+
+Reportes instantáneos generados al detectar movimiento en las puertas:
+
+```
+Estructura útil (12 bytes al final):
+  [BCD Date (6 bytes)] [DoorID (1)] [On (2)] [Type (1)] [Off (2)]
+```
+
+| Campo | Valor | Interpretación |
+|---|---|---|
+| `DoorID` | 0 ó 1 | Puerta **Delantera** → atributos `Front` |
+| `DoorID` | ≥ 2 | Puerta **Trasera** → atributos `Rear` |
+| `On` | uint16 | Pasajeros subidos en este evento |
+| `Off` | uint16 | Pasajeros bajados en este evento |
+
+**Atributos generados:**
+
+| Atributo Traccar | Descripción |
+|---|---|
+| `streamax.status = counting_event` | Marca el evento como conteo APC |
+| `streamax.doorId` | ID de puerta raw |
+| `streamax.raw` | Payload hex del evento (clave de deduplicación) |
+| `passengersOn` / `passengersOff` | Totales del evento |
+| `passengersOnFront` / `passengersOffFront` | Delantera |
+| `passengersOnRear` / `passengersOffRear` | Trasera |
+
+**Fix de flags:** se detectó comportamiento de "flags" (ej. 257 en lugar de 1); solucionado aislando el byte bajo con `getUnsignedByte`.
+
+### 2.3 Deduplicación
+
+El MDVR retransmite el mismo evento dos veces (doble ACK). Para evitar doble conteo:
+
+```javascript
+const key = a['streamax.raw'] || `${p.fixTime}|${a['streamax.doorId']}`;
+if (seen.has(key)) return;
+seen.add(key);
+```
+
+Aplicado en `GeneralCountingPage` y `CountingEventsPage`.
+
+---
+
+## 3. Backend Java
+
+### 3.1 Decoder (`Jt808ProtocolDecoder.java`)
+
+**Mejoras implementadas:**
+1. **BCD Date Fix:** `buf.slice(startIndex, 6)` para evitar desalineación del puntero de lectura
+2. **CacheManager lookup:** prioriza atributos calculados sobre los reportados en `0x0200`
+3. **Retorno inteligente:** devuelve `Position` directa si la lista tiene 1 elemento, `List<Position>` si son varios
+
+### 3.2 Configuración (`traccar.xml`)
+
 ```xml
+<!-- Propagar atributos APC entre posiciones consecutivas -->
 <entry key='processing.copyAttributes'>
-    passengersOn passengersOff 
-    passengersOnFront passengersOffFront 
+    passengersOn passengersOff
+    passengersOnFront passengersOffFront
     passengersOnRear passengersOffRear
 </entry>
 ```
 
-## 5. Visualización (Frontend)
-Componente: `GeneralCountingPage.jsx`
-- **Ruta:** `/reports/counting`.
-- **Funcionalidad:** Relaciona placas de vehículos con contadores desglosados por puerta y totales consolidados.
-- **Periodos:** Filtros por Día, Semana y Mes mediante consultas a `/api/reports/summary`.
+### 3.3 Descarga de Vídeo MDVR (`MdvrClipResource.java`)
 
-## 6. Pruebas Unitarias
-Archivo: `Jt808ProtocolDecoderTest.java`
-- **Ajuste de Tipos:** Se corrigió el error de inferencia de tipo cambiando `var` por `Position` y realizando casting explícito en las llamadas a `decoder.decode`.
-- **Validación:** Se utiliza `org.junit.jupiter.api.Assertions.assertEquals` para verificar atributos dinámicos como `passengersOnFront`.
+**Endpoint:** `GET /api/mdvrclip?deviceId=N&channel=N&from=ISO&to=ISO&plate=X&door=X[&ip=X]`
+
+#### Modo WiFi (parámetro `ip` presente o atributo `mdvrIp` del dispositivo)
+
+```
+1. Auth     → GET /devapi/v1/basic/key?autoLogin=1…
+2. Períodos → GET /devapi/v1/basic/periodrecord?startDate=yy-MM-dd%20HH:mm:ss…
+3. Download → POST /devapi/v1/basic/videodownload?periodId=hddId-rootId-segId
+4. Filtro   → skipToSps() elimina header propietario (~672 bytes)
+              streamFilteredNals() descarta fake-PPS blocks (pps_id > 255)
+5. ffmpeg   → H.264 Annex B → MP4 (-c:v copy, -movflags +faststart)
+```
+
+**Atributos del dispositivo:**
+
+| Atributo | Default | Descripción |
+|---|---|---|
+| `mdvrIp` | 192.168.1.11 | IP del MDVR en red WiFi |
+| `mdvrUser` | admin | Usuario del MDVR |
+| `mdvrPass` | admin | Contraseña del MDVR |
+| `mdvrTimezone` | GMT-5 | Timezone del reloj interno del MDVR |
+| `mdvrChannel` | 1 | Canal por defecto |
+
+#### Modo Celular / JT808 (atributo `mdvrMode = jt1078`)
+
+Cuando el MDVR está en red móvil sin IP pública:
+
+```
+1. Crear sesión en VideoClipManager (clipId + timeout)
+2. Enviar Command JT808 TYPE_VIDEO_DOWNLOAD (0x9202) al dispositivo
+   → KEY_INDEX = canal, KEY_START_TIME/END_TIME = ventana Unix
+3. El MDVR inicia streaming JT1078 hacia el servidor (connection inversa)
+4. VideoClipManager acumula frames H.264 hasta timeout o señal READY
+5. ffmpeg MPEG-TS → MP4 (-c copy, -movflags +faststart)
+6. Responde MP4 al cliente
+```
+
+**Activación:**
+```
+Dispositivo Traccar → Atributos → mdvrMode = jt1078
+```
+
+### 3.4 Hikvision (`HikvisionEventResource.java`)
+
+**Endpoint:** `GET /api/hikvision/events?deviceId=N&from=ISO&to=ISO`
+
+Las cámaras Hikvision devuelven **contadores acumulativos** (totales desde encendido o reset diario), no incrementos por evento. El frontend calcula los deltas.
 
 ---
-**Estado Actual:** Compilación exitosa (BUILD SUCCESSFUL) y persistencia operativa en PostgreSQL.
+
+## 4. Frontend — Páginas de Conteo
+
+### 4.1 Conteo General de Pasajeros (`/reports/counting`)
+
+**Componente:** `GeneralCountingPage.jsx`
+
+- Consulta `/api/reports/route` para todos los dispositivos con filtro `streamax.status = counting_event`
+- **Concurrencia:** 5 workers paralelos con cursor compartido (thread-safe en JS single-thread)
+- **Deduplicación** por `streamax.raw`
+- **Agregación por puerta:**
+
+```javascript
+row.frontIn  += Number(a.passengersOnFront)  || 0;
+row.frontOut += Number(a.passengersOffFront) || 0;
+row.rearIn   += Number(a.passengersOnRear)   || 0;
+row.rearOut  += Number(a.passengersOffRear)  || 0;
+```
+
+- **Exportación Excel** real via `exceljs` + `file-saver`
+- `LinearProgress` con N/total vehículos cargados
+- `AbortController` cancela peticiones al desmontar
+
+### 4.2 Streamax Eventos de Conteo (`/reports/counting/events`)
+
+**Componente:** `CountingEventsPage.jsx`
+
+- Selector único de vehículo (Autocomplete, búsqueda por nombre)
+- Layout: tabla 40% | mapa MapLibre 60%
+- Círculos en mapa (azul = normal, rojo = seleccionado), click sincroniza con tabla
+- Filtros: rango de fechas + puerta (Delantera/Trasera/Todas) + orden ▼/▲
+- Carga `VehicleRecord` por dispositivo para obtener `wifiIp`
+- **Botón de vídeo:**
+  - Con `wifiIp` → `&ip=wifiIp` → descarga WiFi directa; tooltip: "Descargar por WiFi · IP · 65 s"
+  - Sin `wifiIp` → sin parámetro `ip` → backend usa JT808/JT1078 si `mdvrMode=jt1078`; tooltip: "Descargar por red móvil (JT808/JT1078)"
+  - **El botón siempre está habilitado** (sin restricción de WiFi requerida)
+- Ventana de clip: `eventTime − 60 000 ms` a `eventTime + 5 000 ms`
+
+### 4.3 Envío Externo de Conteo (`/reports/counting/external`)
+
+**Componente:** `ExternalForwardingPage.jsx`
+
+- Lista grupos via `GET /api/externalforwarding`
+- Editar configuración via `PUT /api/externalforwarding/{id}` (endpoint, usuario, contraseña)
+- Los grupos se crean/actualizan automáticamente desde el Registro de Vehículos (no se crean manualmente)
+
+### 4.4 Hikvision Eventos de Conteo (`/reports/hikvision/counting`)
+
+**Componente:** `HikvisionCountingPage.jsx`
+
+**Fix de contadores:** las cámaras envían acumulados. El cálculo correcto:
+
+```javascript
+// Ordenar por canal + tiempo ascendente
+// Para cada evento: delta = max(0, actual − anterior del mismo canal)
+// Primer evento de cada canal: delta = 0 (estado previo desconocido)
+// Suma de deltas = max − min = conteo real del período
+```
+
+Esto convierte, por ejemplo, la secuencia `19, 20, 21, 22...` en deltas `0, 1, 1, 1...`
+
+### 4.5 Registro de Vehículos (`/settings/vehicles`)
+
+**Componente:** `VehicleRecordsPage.jsx`
+
+- CRUD completo de vehículos
+- Campos: placa, matrícula, empresa (Autocomplete con empresas existentes), número interno, tipo, fabricante/línea, año, motor/chasis, capacidad, color, vencimiento seguro, dispositivo Traccar, IP WiFi MDVR
+- Chip de vencimiento de seguro con color (verde/amarillo/rojo según días restantes)
+- Diálogo de descarga de vídeo directo por vehículo (selección de rango y canal)
+- Al guardar, sincroniza automáticamente el grupo de envío externo correspondiente
+
+---
+
+## 5. Configuración de Rutas
+
+```
+/reports/counting            → GeneralCountingPage
+/reports/counting/events     → CountingEventsPage (Streamax)
+/reports/counting/external   → ExternalForwardingPage
+/reports/hikvision/counting  → HikvisionCountingPage
+/settings/vehicles           → VehicleRecordsPage
+```
+
+---
+
+## 6. Modos de Descarga de Vídeo — Resumen
+
+| Situación | Configuración | Backend |
+|---|---|---|
+| Vehículo en WiFi depósito | `wifiIp` en VehicleRecord | HTTP directo al MDVR → filtro NAL → ffmpeg |
+| Vehículo en red TIGO (SIM) | `mdvrMode = jt1078` en dispositivo | JT808 0x9202 → JT1078 stream → ffmpeg |
+| Sin ninguna config | — | Intenta `mdvrIp` 192.168.1.11 (fallará si no accesible) |
+
+---
+
+## 7. Pruebas
+
 ```bash
+# Compilar y ejecutar tests del decoder JT808
 .\gradlew.bat clean test --tests Jt808ProtocolDecoderTest
 ```
-*Última actualización: 19 de Mayo de 2026*
+
+Tests en `Jt808ProtocolDecoderTest.java` validan:
+- Parsing correcto de `0x0B02` con distintos `doorId`
+- Deduplicación de eventos
+- Atributos `passengersOnFront`, `passengersOffFront`, `passengersOnRear`, `passengersOffRear`
+
+---
+
+*Última actualización: Junio 2026*
