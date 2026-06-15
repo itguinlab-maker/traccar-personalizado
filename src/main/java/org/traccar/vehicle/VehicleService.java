@@ -53,24 +53,33 @@ public class VehicleService {
         return new ArrayList<>(records.values());
     }
 
+    public List<VehicleRecord> getByCompany(String company) {
+        if (company == null || company.isBlank()) {
+            return getAll();
+        }
+        return records.values().stream()
+                .filter(r -> company.equals(r.getCompany()))
+                .collect(Collectors.toList());
+    }
+
     public Optional<VehicleRecord> getByDeviceId(long deviceId) {
         String id = deviceIndex.get(deviceId);
         return id != null ? Optional.ofNullable(records.get(id)) : Optional.empty();
     }
 
-    public VehicleRecord create(VehicleRecord record) {
+    public VehicleRecord create(VehicleRecord record, boolean adminMode) {
         record.setId(UUID.randomUUID().toString());
         records.put(record.getId(), record);
         if (record.getDeviceId() > 0) {
             deviceIndex.put(record.getDeviceId(), record.getId());
         }
         save();
-        syncForwardingGroup(record.getCompany());
+        syncForwardingGroup(record.getCompany(), adminMode);
         syncDeviceGroup(record.getDeviceId(), record.getCompany());
         return record;
     }
 
-    public Optional<VehicleRecord> update(String id, VehicleRecord updated) {
+    public Optional<VehicleRecord> update(String id, VehicleRecord updated, boolean adminMode) {
         VehicleRecord existing = records.get(id);
         if (existing == null) {
             return Optional.empty();
@@ -88,12 +97,11 @@ public class VehicleService {
         }
         save();
 
-        syncForwardingGroup(oldCompany);
+        syncForwardingGroup(oldCompany, adminMode);
         if (updated.getCompany() != null && !updated.getCompany().equals(oldCompany)) {
-            syncForwardingGroup(updated.getCompany());
+            syncForwardingGroup(updated.getCompany(), adminMode);
         }
 
-        // Si cambió el dispositivo o la empresa, limpiar el groupId del dispositivo anterior
         if (oldDeviceId > 0 && (oldDeviceId != updated.getDeviceId() || !Objects.equals(oldCompany, updated.getCompany()))) {
             syncDeviceGroup(oldDeviceId, null);
         }
@@ -101,7 +109,7 @@ public class VehicleService {
         return Optional.of(updated);
     }
 
-    public boolean delete(String id) {
+    public boolean delete(String id, boolean adminMode) {
         VehicleRecord record = records.remove(id);
         if (record == null) {
             return false;
@@ -110,7 +118,7 @@ public class VehicleService {
             deviceIndex.remove(record.getDeviceId());
         }
         save();
-        syncForwardingGroup(record.getCompany());
+        syncForwardingGroup(record.getCompany(), adminMode);
         syncDeviceGroup(record.getDeviceId(), null);
         return true;
     }
@@ -146,7 +154,7 @@ public class VehicleService {
         }
     }
 
-    private void syncForwardingGroup(String company) {
+    private void syncForwardingGroup(String company, boolean createIfMissing) {
         if (company == null || company.isBlank()) {
             return;
         }
@@ -154,7 +162,7 @@ public class VehicleService {
                 .filter(r -> company.equals(r.getCompany()) && r.getDeviceId() > 0)
                 .map(VehicleRecord::getDeviceId)
                 .collect(Collectors.toSet());
-        forwardingManager.syncCompanyGroup(company, deviceIds);
+        forwardingManager.syncCompanyGroup(company, deviceIds, createIfMissing);
     }
 
     private void load() {

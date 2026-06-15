@@ -51,9 +51,9 @@ Datos persistidos en `data/vehicle_records.json`.
 
 Módulo `ExternalForwardingManager` que agrupa dispositivos por empresa y reenvía eventos APC a APIs externas:
 
-- Los grupos se crean/sincronizan automáticamente desde el Registro de Vehículos
+- Los grupos de forwarding se crean automáticamente **solo cuando un administrador** registra el primer vehículo de una empresa. Los usuarios no-admin solo actualizan grupos existentes.
 - Cada grupo almacena: endpoint URL, usuario y contraseña (Basic Auth)
-- Página de configuración en **Reportes → Envío Externo de Conteo** (`/reports/counting/external`)
+- Página de configuración en **Reportes → Envío Externo de Conteo** (`/reports/counting/external`) — visible solo para SuperAdmin y Admin de Empresa
 - Datos persistidos en `data/forwarding_groups.json`
 
 ### 4. Descarga de vídeo MDVR (`/api/mdvrclip`)
@@ -108,7 +108,34 @@ Cuando el vehículo está en red móvil y la SIM no es accesible desde internet:
 - Chips resumen: N eventos, ↑ Subidas, ↓ Bajadas, Neto ±N
 - Descarga de clip de vídeo por evento (±30 s)
 
-### 6. Identidad visual (CountinG&KLAB)
+### 6. Gestión de usuarios y roles multiempresa
+
+La plataforma soporta múltiples empresas con separación total de datos. Ver guía completa en [USER_MANAGEMENT.md](USER_MANAGEMENT.md).
+
+**Roles disponibles** (configurados en `user.attributes`):
+
+| Rol | `attributes.role` | Acceso |
+|---|---|---|
+| SuperAdmin | *(administrator = true)* | Todo |
+| Admin de Empresa | `admin_empresa` | Solo su empresa — CRUD vehículos, reportes, forwarding |
+| Supervisor | `supervisor` | Solo lectura — vehículos y reportes de su empresa |
+| Propietario | `propietario` | Solo dispositivos explícitamente asignados |
+| Auditor | `auditor` | Solo reportes, sin editar ni mapa |
+
+**Principios de separación:**
+- **Dispositivos:** Traccar filtra nativamente por permisos de grupo (`tc_user_group`)
+- **Vehículos:** `GET /api/vehiclerecords` filtra por `user.attributes.company`
+- **Forwarding:** `GET /api/externalforwarding` filtra por `user.attributes.company`
+- **Grupos Traccar:** solo el admin puede crear grupos — los no-admin seleccionan de los grupos existentes a los que pertenecen
+
+**Flujo de alta de una empresa:**
+1. SuperAdmin crea el grupo Traccar (ej. `TRSC`)
+2. SuperAdmin crea el usuario con Rol = `admin_empresa` y Empresa = `TRSC`
+3. SuperAdmin vincula el usuario al grupo `TRSC` (Configuración → Usuarios → Conexiones)
+4. Admin de empresa registra sus vehículos seleccionando el grupo `TRSC`
+5. Los dispositivos quedan asignados al grupo automáticamente
+
+### 7. Identidad visual (CountinG&KLAB)
 
 - Nombre de plataforma: **CountinG&KLAB v1.0.2**
 - Logo: `gnklab01.png` en pantalla de login y app
@@ -116,7 +143,7 @@ Cuando el vehículo está en red móvil y la SIM no es accesible desde internet:
 - Modo oscuro forzado: `bg #121212`, paper `#1E1E1E`
 - Sidebar del login con gradiente azul oscuro
 
-### 7. Infraestructura de despliegue (`deploy-traccar/`)
+### 8. Infraestructura de despliegue (`deploy-traccar/`)
 
 | Archivo | Descripción |
 |---|---|
@@ -135,13 +162,15 @@ Cuando el vehículo está en red móvil y la SIM no es accesible desde internet:
 
 ## Rutas del frontend
 
-| Ruta | Página |
-|---|---|
-| `/reports/counting` | Conteo General de Pasajeros (APC) |
-| `/reports/counting/events` | Streamax Eventos de Conteo |
-| `/reports/counting/external` | Envío Externo de Conteo |
-| `/reports/hikvision/counting` | Hikvision Eventos de Conteo |
-| `/settings/vehicles` | Registro de Vehículos |
+| Ruta | Página | Roles con acceso |
+|---|---|---|
+| `/reports/counting` | Conteo General de Pasajeros (APC) | Todos |
+| `/reports/counting/events` | Streamax Eventos de Conteo | Todos |
+| `/reports/counting/external` | Envío Externo de Conteo | SuperAdmin, Admin Empresa |
+| `/reports/hikvision/counting` | Hikvision Eventos de Conteo | Todos |
+| `/settings/vehicles` | Registro de Vehículos | SuperAdmin, Admin Empresa, Supervisor (solo ver) |
+| `/settings/devices` | Dispositivos | SuperAdmin, Admin Empresa |
+| `/settings/groups` | Grupos | SuperAdmin únicamente |
 
 ---
 

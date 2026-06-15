@@ -77,6 +77,15 @@ public class ExternalForwardingManager {
         return new ArrayList<>(groups.values());
     }
 
+    public List<ForwardingGroup> getByCompany(String company) {
+        if (company == null || company.isBlank()) {
+            return getAll();
+        }
+        return groups.values().stream()
+                .filter(g -> company.equals(g.getName()))
+                .collect(java.util.stream.Collectors.toList());
+    }
+
     public Optional<ForwardingGroup> getById(String id) {
         return Optional.ofNullable(groups.get(id));
     }
@@ -189,7 +198,12 @@ public class ExternalForwardingManager {
      * Keeps the forwarding group for the given company name in sync with the current
      * set of device IDs that belong to it.
      */
-    public synchronized void syncCompanyGroup(String companyName, Set<Long> deviceIds) {
+    /**
+     * Syncs devices into the forwarding group matching companyName.
+     * When createIfMissing=true (admin only) a new group is created when none exists.
+     * When createIfMissing=false the call is a no-op if the group doesn't exist yet.
+     */
+    public synchronized void syncCompanyGroup(String companyName, Set<Long> deviceIds, boolean createIfMissing) {
         if (companyName == null || companyName.isBlank()) {
             return;
         }
@@ -201,7 +215,7 @@ public class ExternalForwardingManager {
             found.setDeviceIds(new HashSet<>(deviceIds));
             indexDevices(found);
             save();
-        } else if (!deviceIds.isEmpty()) {
+        } else if (createIfMissing && !deviceIds.isEmpty()) {
             ForwardingGroup g = new ForwardingGroup();
             g.setId(UUID.randomUUID().toString());
             g.setName(companyName);

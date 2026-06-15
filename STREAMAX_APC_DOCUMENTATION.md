@@ -186,11 +186,12 @@ row.rearOut  += Number(a.passengersOffRear)  || 0;
 
 ### 4.3 Envío Externo de Conteo (`/reports/counting/external`)
 
-**Componente:** `ExternalForwardingPage.jsx`
+**Componente:** `ExternalForwardingPage.jsx`  
+**Acceso:** SuperAdmin y Admin de Empresa únicamente
 
-- Lista grupos via `GET /api/externalforwarding`
+- Lista grupos via `GET /api/externalforwarding` (filtrado por empresa del usuario si no es admin)
 - Editar configuración via `PUT /api/externalforwarding/{id}` (endpoint, usuario, contraseña)
-- Los grupos se crean/actualizan automáticamente desde el Registro de Vehículos (no se crean manualmente)
+- Los grupos de forwarding se crean automáticamente **solo cuando el admin** registra el primer vehículo de una empresa; un no-admin solo actualiza grupos existentes
 
 ### 4.4 Hikvision Eventos de Conteo (`/reports/hikvision/counting`)
 
@@ -209,13 +210,15 @@ Esto convierte, por ejemplo, la secuencia `19, 20, 21, 22...` en deltas `0, 1, 1
 
 ### 4.5 Registro de Vehículos (`/settings/vehicles`)
 
-**Componente:** `VehicleRecordsPage.jsx`
+**Componente:** `VehicleRecordsPage.jsx`  
+**Acceso:** SuperAdmin (CRUD completo), Admin Empresa (CRUD de su empresa), Supervisor (solo lectura)
 
-- CRUD completo de vehículos
-- Campos: placa, matrícula, empresa (Autocomplete con empresas existentes), número interno, tipo, fabricante/línea, año, motor/chasis, capacidad, color, vencimiento seguro, dispositivo Traccar, IP WiFi MDVR
+- CRUD completo de vehículos con control por rol
+- **Selector de Grupo/Empresa:** desplegable que carga `GET /api/groups` — Traccar filtra automáticamente mostrando solo los grupos a los que el usuario pertenece. El admin ve todos; un admin_empresa ve solo el suyo.
+- Campos: placa, matrícula, grupo/empresa, número interno, tipo, fabricante/línea, año, motor/chasis, capacidad, color, vencimiento seguro, dispositivo Traccar, IP WiFi MDVR
 - Chip de vencimiento de seguro con color (verde/amarillo/rojo según días restantes)
 - Diálogo de descarga de vídeo directo por vehículo (selección de rango y canal)
-- Al guardar, sincroniza automáticamente el grupo de envío externo correspondiente
+- Al guardar, asigna el dispositivo al grupo Traccar y sincroniza el grupo de forwarding externo (solo crea el grupo de forwarding si es admin)
 
 ---
 
@@ -252,6 +255,21 @@ Tests en `Jt808ProtocolDecoderTest.java` validan:
 - Parsing correcto de `0x0B02` con distintos `doorId`
 - Deduplicación de eventos
 - Atributos `passengersOnFront`, `passengersOffFront`, `passengersOnRear`, `passengersOffRear`
+
+---
+
+## 8. Roles y acceso multiempresa
+
+Ver documentación completa en [USER_MANAGEMENT.md](USER_MANAGEMENT.md).
+
+Resumen de filtrado en los endpoints de conteo:
+
+| Endpoint | Admin | No-admin con empresa |
+|---|---|---|
+| `GET /api/vehiclerecords` | Todos los registros | Solo registros de su empresa |
+| `GET /api/externalforwarding` | Todos los grupos | Solo grupo de su empresa |
+| `GET /api/groups` | Todos los grupos | Solo grupos vinculados al usuario (Traccar nativo) |
+| `GET /api/reports/route` | Todos los dispositivos | Solo dispositivos de su grupo (Traccar nativo) |
 
 ---
 
