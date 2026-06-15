@@ -1,16 +1,18 @@
-# update-local.ps1 — Actualización segura de Traccar (NO toca PostgreSQL ni datos)
+# update-local.ps1 — Actualizacion segura de Traccar (NO toca PostgreSQL ni datos)
 # Uso: .\deploy-traccar\update-local.ps1
-# Uso (sin push a Docker Hub): .\deploy-traccar\update-local.ps1 -SkipPush
+# Uso (sin push): .\deploy-traccar\update-local.ps1 -SkipPush
 param(
     [switch]$SkipPush
 )
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+chcp 65001 | Out-Null
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 
-# ── Configuración Docker Hub ──────────────────────────────────
-$DockerHubUser = "itguinlab-maker"     # ← tu usuario de Docker Hub
-$ImageName     = "traccar_personalizado"
-$RemoteImage   = "$DockerHubUser/$ImageName"
+# ── Configuración GitHub Container Registry ──────────────────
+$GithubUser  = "itguinlab-maker"
+$ImageName   = "traccar_personalizado"
+$RemoteImage = "ghcr.io/$GithubUser/$ImageName"
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " Traccar — Actualización segura" -ForegroundColor Cyan
@@ -81,7 +83,7 @@ if (-not $SkipPush) {
     # Subir ambas etiquetas
     docker push "${RemoteImage}:${Tag}"
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "[WARN] Push fallido. Verifica que hayas hecho 'docker login' previamente." -ForegroundColor Yellow
+        Write-Host "[WARN] Push fallido. Verifica que hayas hecho 'docker login ghcr.io' previamente." -ForegroundColor Yellow
         Write-Host "       Continúa sin push..." -ForegroundColor Yellow
     } else {
         docker push "${RemoteImage}:latest"

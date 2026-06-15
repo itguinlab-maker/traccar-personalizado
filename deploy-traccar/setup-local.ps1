@@ -8,10 +8,10 @@ param(
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 
-# ── Configuración Docker Hub ──────────────────────────────────
-$DockerHubUser = "itguinlab-maker"     # ← tu usuario de Docker Hub
-$ImageName     = "traccar_personalizado"
-$RemoteImage   = "$DockerHubUser/$ImageName"
+# ── Configuración GitHub Container Registry ──────────────────
+$GithubUser  = "itguinlab-maker"
+$ImageName   = "traccar_personalizado"
+$RemoteImage = "ghcr.io/$GithubUser/$ImageName"
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " Traccar — Setup de volúmenes externos" -ForegroundColor Cyan
@@ -62,7 +62,7 @@ if (-not $SkipPush) {
 
     docker push "${RemoteImage}:${Tag}"
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "[WARN] Push fallido. Ejecuta 'docker login' y vuelve a intentar." -ForegroundColor Yellow
+        Write-Host "[WARN] Push fallido. Ejecuta 'docker login ghcr.io' y vuelve a intentar." -ForegroundColor Yellow
     } else {
         docker push "${RemoteImage}:latest"
         Write-Host "[OK] Imagen publicada:" -ForegroundColor Green

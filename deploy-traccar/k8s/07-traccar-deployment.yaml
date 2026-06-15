@@ -41,7 +41,7 @@ spec:
 
       containers:
         - name: traccar
-          image: itguinlab-maker/traccar_personalizado:latest
+          image: ghcr.io/itguinlab-maker/traccar_personalizado:latest
 
           env:
             - name: DB_HOST

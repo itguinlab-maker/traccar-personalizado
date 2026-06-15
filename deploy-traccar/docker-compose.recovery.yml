@@ -20,7 +20,7 @@ services:
 
   # ── Traccar personalizado (desde Docker Hub) ──────────────
   traccar:
-    image: itguinlab-maker/traccar_personalizado:latest
+    image: ghcr.io/itguinlab-maker/traccar_personalizado:latest
     container_name: traccar_server
     restart: unless-stopped
     environment:
