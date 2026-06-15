@@ -30,4 +30,14 @@
     <!-- Tiempo máximo sin actividad antes de marcar dispositivo como desconocido (segundos) -->
     <entry key='deviceTimeout'>3600</entry>
 
+    <!-- SMTP para reset de contraseña — configurar en la VM directamente en traccar.xml
+    <entry key='mail.smtp.host'>smtp.gmail.com</entry>
+    <entry key='mail.smtp.port'>587</entry>
+    <entry key='mail.smtp.starttls.enable'>true</entry>
+    <entry key='mail.smtp.auth'>true</entry>
+    <entry key='mail.smtp.username'>CORREO@gmail.com</entry>
+    <entry key='mail.smtp.password'>CONTRASENA_APP_16_CHARS</entry>
+    <entry key='mail.smtp.from'>CORREO@gmail.com</entry>
+    -->
+
 </properties>
