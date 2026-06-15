@@ -14,7 +14,7 @@
     <entry key='logger.console'>true</entry>
     <entry key='logger.queries'>false</entry>
     <entry key='logger.fullStackTraces'>true</entry>
-    <entry key='logger.level'>all</entry> <entry key='mail.debug'>true</entry>
+    <entry key='logger.level'>all</entry>
 
     <entry key='database.driver'>org.postgresql.Driver</entry>
     <entry key='database.url'>jdbc:postgresql://traccar-postgres:5432/traccar</entry>

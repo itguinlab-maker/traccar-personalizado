@@ -8,7 +8,7 @@ RUN npm run build
 
 # --- ETAPA 2: Crear la Imagen Final Ligera ---
 FROM eclipse-temurin:21-jre
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/traccar
 
 # 1. Copiamos los ejecutables y configuraciones de Java
@@ -25,5 +25,9 @@ COPY traccar-web ./traccar-web
 RUN rm -rf ./web
 COPY --from=frontend-builder /src/traccar-web/build ./web
 
+# 4. Entrypoint compartido con producción (inyecta SMTP desde env vars)
+COPY deploy-traccar/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 EXPOSE 8082 21081 21081/udp 8400
-ENTRYPOINT ["java", "-jar", "tracker-server.jar", "debug.xml"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
