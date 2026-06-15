@@ -31,7 +31,7 @@ services:
       POSTGRES_USER: traccar
       POSTGRES_PASSWORD: traccar123
     volumes:
-      - /home/guin/traccar/postgres/data:/var/lib/postgresql/data
+      - traccar_postgres_data:/var/lib/postgresql/data
     networks:
       - traccar-network
     healthcheck:
@@ -43,6 +43,7 @@ services:
 volumes:
   traccar_data:
     external: true
+  traccar_postgres_data:
 
 networks:
   traccar-network:
