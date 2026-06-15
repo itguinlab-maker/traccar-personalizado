@@ -31,14 +31,5 @@
     <entry key='web.url'>http://192.168.1.8:8082</entry>
     <entry key='jt1078.port'>8400</entry>
 
-    <!-- SMTP: agregar localmente con docker cp debug.xml traccar_server:/opt/traccar/debug.xml
-    <entry key='mail.smtp.host'>smtp.gmail.com</entry>
-    <entry key='mail.smtp.port'>587</entry>
-    <entry key='mail.smtp.starttls.enable'>true</entry>
-    <entry key='mail.smtp.auth'>true</entry>
-    <entry key='mail.smtp.username'>CORREO@gmail.com</entry>
-    <entry key='mail.smtp.password'>CONTRASENA_APP_16_CHARS</entry>
-    <entry key='mail.smtp.from'>CORREO@gmail.com</entry>
-    -->
 
 </properties>
