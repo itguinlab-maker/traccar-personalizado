@@ -54,6 +54,10 @@ public class ExternalForwardingResource extends BaseResource {
                     .map(updated -> Response.ok(updated).build())
                     .orElse(Response.status(Response.Status.NOT_FOUND).build());
         }
+        if ("supervisor_global".equals(getSessionUserRole())) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(Map.of("error", "Rol de solo lectura")).build();
+        }
         String company = getSessionUserCompany();
         if (company != null && !company.equals(group.getName())) {
             return Response.status(Response.Status.FORBIDDEN)
@@ -72,6 +76,10 @@ public class ExternalForwardingResource extends BaseResource {
                     ? Response.noContent().build()
                     : Response.status(Response.Status.NOT_FOUND).build();
         }
+        if ("supervisor_global".equals(getSessionUserRole())) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(Map.of("error", "Rol de solo lectura")).build();
+        }
         String company = getSessionUserCompany();
         if (company != null) {
             boolean owned = manager.getByCompany(company).stream().anyMatch(g -> id.equals(g.getId()));
@@ -86,11 +94,19 @@ public class ExternalForwardingResource extends BaseResource {
     }
 
     private String getSessionUserCompany() throws StorageException {
+        return getSessionUserAttribute("company");
+    }
+
+    private String getSessionUserRole() throws StorageException {
+        return getSessionUserAttribute("role");
+    }
+
+    private String getSessionUserAttribute(String key) throws StorageException {
         List<User> users = storage.getObjects(User.class, new Request(
                 new Columns.All(),
                 new Condition.Equals("id", getUserId())));
         if (!users.isEmpty()) {
-            Object val = users.get(0).getAttributes().get("company");
+            Object val = users.get(0).getAttributes().get(key);
             return val != null ? val.toString() : null;
         }
         return null;

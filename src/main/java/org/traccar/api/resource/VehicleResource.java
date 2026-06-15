@@ -59,6 +59,10 @@ public class VehicleResource extends BaseResource {
         }
         boolean isAdmin = !permissionsService.notAdmin(getUserId());
         if (!isAdmin) {
+            if ("supervisor_global".equals(getSessionUserRole())) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(Map.of("error", "Rol de solo lectura")).build();
+            }
             String company = getSessionUserCompany();
             if (company != null && !company.equals(record.getCompany())) {
                 return Response.status(Response.Status.FORBIDDEN)
@@ -77,6 +81,10 @@ public class VehicleResource extends BaseResource {
         }
         boolean isAdmin = !permissionsService.notAdmin(getUserId());
         if (!isAdmin) {
+            if ("supervisor_global".equals(getSessionUserRole())) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(Map.of("error", "Rol de solo lectura")).build();
+            }
             String company = getSessionUserCompany();
             if (company != null && !company.equals(record.getCompany())) {
                 return Response.status(Response.Status.FORBIDDEN)
@@ -93,6 +101,10 @@ public class VehicleResource extends BaseResource {
     public Response delete(@PathParam("id") String id) throws StorageException {
         boolean isAdmin = !permissionsService.notAdmin(getUserId());
         if (!isAdmin) {
+            if ("supervisor_global".equals(getSessionUserRole())) {
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(Map.of("error", "Rol de solo lectura")).build();
+            }
             String company = getSessionUserCompany();
             if (company != null) {
                 boolean owned = service.getByCompany(company).stream().anyMatch(r -> id.equals(r.getId()));
@@ -116,11 +128,19 @@ public class VehicleResource extends BaseResource {
     }
 
     private String getSessionUserCompany() throws StorageException {
+        return getSessionUserAttribute("company");
+    }
+
+    private String getSessionUserRole() throws StorageException {
+        return getSessionUserAttribute("role");
+    }
+
+    private String getSessionUserAttribute(String key) throws StorageException {
         List<User> users = storage.getObjects(User.class, new Request(
                 new Columns.All(),
                 new Condition.Equals("id", getUserId())));
         if (!users.isEmpty()) {
-            Object val = users.get(0).getAttributes().get("company");
+            Object val = users.get(0).getAttributes().get(key);
             return val != null ? val.toString() : null;
         }
         return null;
