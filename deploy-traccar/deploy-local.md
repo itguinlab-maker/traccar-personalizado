@@ -122,12 +122,58 @@ docker volume inspect traccar_app_data
 
 ## Backup de la base de datos
 
-```powershell
-# Crear backup
-docker exec traccar-postgres pg_dump -U traccar traccar > "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
+> **REGLA OBLIGATORIA:** Antes de cualquier acción destructiva (recrear contenedores,
+> cambiar volúmenes, `docker rm`, `docker compose down`, modificar la BD directamente)
+> se debe hacer un backup. Sin excepción, incluso en local.
 
-# Restaurar desde backup
+### Acciones que requieren backup previo
+
+- `docker compose up --force-recreate`
+- `docker rm` de contenedores con volúmenes de datos
+- `docker compose down` (especialmente con `-v`)
+- Cambios en la sección `volumes:` del `docker-compose.yml`
+- Cualquier operación destructiva en producción
+
+### Crear backup (local)
+
+```powershell
+# Formato binario (recomendado — más robusto para restore)
+docker exec traccar-postgres pg_dump -U traccar -d traccar -Fc -f /tmp/backup.dump
+docker cp traccar-postgres:/tmp/backup.dump ".\backup_local_$(Get-Date -Format 'yyyyMMdd_HHmmss').dump"
+
+# Formato SQL legible (alternativa)
+docker exec traccar-postgres pg_dump -U traccar traccar > "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').sql"
+```
+
+### Restaurar backup (local)
+
+```powershell
+# Desde formato binario
+docker cp .\backup_local_FECHA.dump traccar-postgres:/tmp/restore.dump
+docker exec traccar-postgres pg_restore -U traccar -d traccar -c /tmp/restore.dump
+
+# Desde formato SQL
 Get-Content backup_FECHA.sql | docker exec -i traccar-postgres psql -U traccar traccar
+```
+
+### Crear backup (producción — VM GCloud)
+
+```powershell
+# El archivo queda en ~/traccar/ dentro de la VM
+ssh -i "$HOME\.ssh\google_compute_engine" USUARIO@34.61.186.60 `
+  "docker exec traccar-postgres pg_dump -U traccar -d traccar -Fc > ~/traccar/backup_prod_`$(date +%Y%m%d_%H%M%S).dump"
+
+# Verificar que se creó
+ssh -i "$HOME\.ssh\google_compute_engine" USUARIO@34.61.186.60 "ls -lh ~/traccar/backup_prod_*.dump"
+```
+
+### Restaurar backup (producción)
+
+```bash
+# Copiar el backup al contenedor y restaurar
+ssh -i "$HOME\.ssh\google_compute_engine" USUARIO@34.61.186.60 \
+  "docker cp ~/traccar/backup_prod_FECHA.dump traccar-postgres:/tmp/restore.dump && \
+   docker exec traccar-postgres pg_restore -U traccar -d traccar -c /tmp/restore.dump"
 ```
 
 ---
