@@ -115,13 +115,18 @@ public class DeviceResource extends BaseObjectResource<Device> {
 
             var conditions = new LinkedList<Condition>();
 
+            boolean notAdmin = permissionsService.notAdmin(getUserId());
+            boolean supervisorGlobal = notAdmin && isSupervisorGlobal();
+
             if (all) {
-                if (permissionsService.notAdmin(getUserId())) {
+                if (notAdmin && !supervisorGlobal) {
                     conditions.add(new Condition.Permission(User.class, getUserId(), baseClass));
                 }
             } else {
                 if (userId == 0) {
-                    conditions.add(new Condition.Permission(User.class, getUserId(), baseClass));
+                    if (!supervisorGlobal) {
+                        conditions.add(new Condition.Permission(User.class, getUserId(), baseClass));
+                    }
                 } else {
                     permissionsService.checkUser(getUserId(), userId);
                     conditions.add(new Condition.Permission(User.class, userId, baseClass).excludeGroups());
@@ -183,6 +188,11 @@ public class DeviceResource extends BaseObjectResource<Device> {
 
         actionLogger.resetAccumulators(request, getUserId(), entity.getDeviceId());
         return Response.noContent().build();
+    }
+
+    private boolean isSupervisorGlobal() throws StorageException {
+        Object val = permissionsService.getUser(getUserId()).getAttributes().get("role");
+        return "supervisor_global".equals(val != null ? val.toString() : null);
     }
 
     private String imageExtension(String type) {
