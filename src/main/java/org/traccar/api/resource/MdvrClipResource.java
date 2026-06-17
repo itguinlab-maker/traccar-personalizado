@@ -18,8 +18,7 @@ package org.traccar.api.resource;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.ByteBuf;
 import jakarta.inject.Inject;
-import org.traccar.config.Config;
-import org.traccar.config.Keys;
+
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -89,9 +88,6 @@ public class MdvrClipResource extends BaseResource {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Inject
-    private Config config;
-
-    @Inject
     private VideoClipManager clipManager;
 
     @Inject
@@ -129,8 +125,7 @@ public class MdvrClipResource extends BaseResource {
         Device device = storage.getObject(Device.class, new Request(
                 new Columns.All(), new Condition.Equals("id", deviceId)));
 
-        boolean useJt1078 = config.hasKey(Keys.JT1078_SERVER_HOST)
-                || "jt1078".equalsIgnoreCase(device != null ? device.getString("mdvrMode", "") : "");
+        boolean useJt1078 = "jt1078".equalsIgnoreCase(device != null ? device.getString("mdvrMode", "") : "");
 
         String mdvrIp = (!ipOverride.isBlank())
                 ? ipOverride
