@@ -86,7 +86,10 @@ public class HikvisionEventService {
         }
         // Already correct UTC
         if (s.endsWith("Z") || s.endsWith("z")) {
-            try { return Instant.parse(s); } catch (Exception ignored) { }
+            try {
+                return Instant.parse(s);
+            } catch (Exception ignored) {
+            }
         }
         // Camera bug: UTC value with local offset appended — correct by adding abs(offset)
         String norm = s.replaceAll("([+-])(\\d:)", "$10$2");

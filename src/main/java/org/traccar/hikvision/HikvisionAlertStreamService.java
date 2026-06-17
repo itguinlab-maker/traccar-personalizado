@@ -354,8 +354,10 @@ public class HikvisionAlertStreamService {
         for (String tag : tags) {
             NodeList nl = el.getElementsByTagName(tag);
             if (nl.getLength() > 0) {
-                try { return Integer.parseInt(nl.item(0).getTextContent().trim()); }
-                catch (NumberFormatException ignored) { }
+                try {
+                    return Integer.parseInt(nl.item(0).getTextContent().trim());
+                } catch (NumberFormatException ignored) {
+                }
             }
         }
         return 0;
@@ -366,7 +368,9 @@ public class HikvisionAlertStreamService {
             NodeList nl = el.getElementsByTagName(tag);
             if (nl.getLength() > 0) {
                 String t = nl.item(0).getTextContent().trim();
-                if (!t.isEmpty()) return t;
+                if (!t.isEmpty()) {
+                    return t;
+                }
             }
         }
         return null;
@@ -544,7 +548,9 @@ public class HikvisionAlertStreamService {
             MessageDigest md = MessageDigest.getInstance("MD5");
             byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder(32);
-            for (byte b : hash) sb.append(String.format("%02x", b));
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
             return sb.toString();
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
@@ -556,8 +562,12 @@ public class HikvisionAlertStreamService {
     // Camera bug: sends UTC value with local offset appended (e.g. 16:00-05:00 when real local is 21:00)
     // Fix: parse with standard ISO offset, then add abs(offset) to get real UTC
     static String fixCameraDateTime(String raw) {
-        if (raw == null) return null;
-        if (raw.endsWith("Z") || raw.endsWith("z")) return raw;
+        if (raw == null) {
+            return null;
+        }
+        if (raw.endsWith("Z") || raw.endsWith("z")) {
+            return raw;
+        }
         String norm = raw.replaceAll("([+-])(\\d:)", "$10$2");
         try {
             java.time.OffsetDateTime odt = java.time.OffsetDateTime.parse(norm);

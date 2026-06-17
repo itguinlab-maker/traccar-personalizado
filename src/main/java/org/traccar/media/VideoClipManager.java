@@ -74,7 +74,8 @@ public class VideoClipManager {
         return clipId;
     }
 
-    public void handleFrame(long deviceId, int channel, ByteBuf nalData, long timestamp, boolean isKeyFrame, int payloadType) {
+    public void handleFrame(
+            long deviceId, int channel, ByteBuf nalData, long timestamp, boolean isKeyFrame, int payloadType) {
         String clipId = sessionByDevice.get(deviceId + "_" + channel);
         if (clipId == null) {
             return;
@@ -97,10 +98,12 @@ public class VideoClipManager {
         if (session != null) {
             if (session.getStatus() == ClipStatus.PENDING) {
                 session.markError();
-                LOGGER.warn("VIDEOCLIP NO FRAMES RECEIVED key={} clipId={} — device did not stream back", deviceKey, clipId);
+                LOGGER.warn("VIDEOCLIP NO FRAMES RECEIVED key={} clipId={} — device did not stream back",
+                        deviceKey, clipId);
             } else {
                 session.markReady();
-                LOGGER.info("VIDEOCLIP FINALIZED key={} clipId={} bytes={}", deviceKey, clipId, session.getData().readableBytes());
+                LOGGER.info("VIDEOCLIP FINALIZED key={} clipId={} bytes={}",
+                        deviceKey, clipId, session.getData().readableBytes());
             }
         }
     }

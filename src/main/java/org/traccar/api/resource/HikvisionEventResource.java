@@ -210,8 +210,10 @@ public class HikvisionEventResource extends BaseResource {
                 final Process finalProc = proc;
                 final java.io.ByteArrayOutputStream errBuf = new java.io.ByteArrayOutputStream(8192);
                 Thread drainer = new Thread(() -> {
-                    try { finalProc.getInputStream().transferTo(errBuf); }
-                    catch (Exception ignored) { }
+                    try {
+                        finalProc.getInputStream().transferTo(errBuf);
+                    } catch (Exception ignored) {
+                    }
                 }, "hik-ffmpeg-drain");
                 drainer.setDaemon(true);
                 drainer.start();
@@ -238,7 +240,9 @@ public class HikvisionEventResource extends BaseResource {
                 Thread.currentThread().interrupt();
                 throw new java.io.IOException("interrupted", e);
             } finally {
-                if (proc != null) proc.destroyForcibly();
+                if (proc != null) {
+                    proc.destroyForcibly();
+                }
                 java.nio.file.Files.deleteIfExists(tmp);
             }
         };
@@ -323,7 +327,10 @@ public class HikvisionEventResource extends BaseResource {
     private int intOf(Document doc, int defaultValue, String... tags) {
         String val = textOf(doc, tags);
         if (val != null) {
-            try { return Integer.parseInt(val); } catch (NumberFormatException ignored) { }
+            try {
+                return Integer.parseInt(val);
+            } catch (NumberFormatException ignored) {
+            }
         }
         return defaultValue;
     }

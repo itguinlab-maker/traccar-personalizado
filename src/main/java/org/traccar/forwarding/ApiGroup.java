@@ -26,31 +26,58 @@ public class ApiGroup {
     /** Traccar device IDs that belong to this group. */
     private Set<Long> deviceIds = new HashSet<>();
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public String getId() {
+        return id;
+    }
 
-    public String getNombreEmpresa() { return nombreEmpresa; }
-    public void setNombreEmpresa(String nombreEmpresa) { this.nombreEmpresa = nombreEmpresa; }
+    public void setId(String id) {
+        this.id = id;
+    }
 
-    public String getEndpointUrl() { return endpointUrl; }
-    public void setEndpointUrl(String endpointUrl) { this.endpointUrl = endpointUrl; }
+    public String getNombreEmpresa() {
+        return nombreEmpresa;
+    }
 
-    public String getMetodoHttp() { return metodoHttp; }
+    public void setNombreEmpresa(String nombreEmpresa) {
+        this.nombreEmpresa = nombreEmpresa;
+    }
+
+    public String getEndpointUrl() {
+        return endpointUrl;
+    }
+
+    public void setEndpointUrl(String endpointUrl) {
+        this.endpointUrl = endpointUrl;
+    }
+
+    public String getMetodoHttp() {
+        return metodoHttp;
+    }
+
     public void setMetodoHttp(String metodoHttp) {
         this.metodoHttp = (metodoHttp != null) ? metodoHttp.toUpperCase() : "POST";
     }
 
-    public Map<String, String> getConfigAuth() { return configAuth; }
+    public Map<String, String> getConfigAuth() {
+        return configAuth;
+    }
+
     public void setConfigAuth(Map<String, String> configAuth) {
         this.configAuth = configAuth != null ? configAuth : new HashMap<>();
     }
 
-    public Map<String, String> getHeadersExtra() { return headersExtra; }
+    public Map<String, String> getHeadersExtra() {
+        return headersExtra;
+    }
+
     public void setHeadersExtra(Map<String, String> headersExtra) {
         this.headersExtra = headersExtra != null ? headersExtra : new HashMap<>();
     }
 
-    public Set<Long> getDeviceIds() { return deviceIds; }
+    public Set<Long> getDeviceIds() {
+        return deviceIds;
+    }
+
     public void setDeviceIds(Set<Long> deviceIds) {
         this.deviceIds = deviceIds != null ? deviceIds : new HashSet<>();
     }

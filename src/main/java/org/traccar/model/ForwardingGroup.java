@@ -31,21 +31,51 @@ public class ForwardingGroup {
     private String password;
     private Set<Long> deviceIds = new HashSet<>();
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public String getId() {
+        return id;
+    }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public void setId(String id) {
+        this.id = id;
+    }
 
-    public String getServerUrl() { return serverUrl; }
-    public void setServerUrl(String serverUrl) { this.serverUrl = serverUrl; }
+    public String getName() {
+        return name;
+    }
 
-    public String getUsername() { return username; }
-    public void setUsername(String username) { this.username = username; }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    public String getPassword() { return password; }
-    public void setPassword(String password) { this.password = password; }
+    public String getServerUrl() {
+        return serverUrl;
+    }
 
-    public Set<Long> getDeviceIds() { return deviceIds; }
-    public void setDeviceIds(Set<Long> deviceIds) { this.deviceIds = deviceIds != null ? deviceIds : new HashSet<>(); }
+    public void setServerUrl(String serverUrl) {
+        this.serverUrl = serverUrl;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    public Set<Long> getDeviceIds() {
+        return deviceIds;
+    }
+
+    public void setDeviceIds(Set<Long> deviceIds) {
+        this.deviceIds = deviceIds != null ? deviceIds : new HashSet<>();
+    }
 }

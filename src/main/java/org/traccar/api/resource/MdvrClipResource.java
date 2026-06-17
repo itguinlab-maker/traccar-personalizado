@@ -428,21 +428,19 @@ public class MdvrClipResource extends BaseResource {
         switch (nalType) {
             case 7: // SPS
                 return payloadLen >= 3;
-            case 8: { // PPS — validate pps_id ≤ 255
-                int[] pos = {payloadOff << 3};
-                Integer ppsId = readUev(data, pos, payloadOff + payloadLen);
+            case 8: // PPS — validate pps_id ≤ 255
+                int[] ppsPos = {payloadOff << 3};
+                Integer ppsId = readUev(data, ppsPos, payloadOff + payloadLen);
                 return ppsId != null && ppsId <= 255;
-            }
-            case 1: case 2: case 3: case 4: case 5: { // Slice — validate slice_type ≤ 9
-                int[] pos = {payloadOff << 3};
+            case 1: case 2: case 3: case 4: case 5: // Slice — validate slice_type ≤ 9
+                int[] slicePos = {payloadOff << 3};
                 int endByte = payloadOff + payloadLen;
-                Integer mbAddr = readUev(data, pos, endByte);
+                Integer mbAddr = readUev(data, slicePos, endByte);
                 if (mbAddr == null) {
                     return false;
                 }
-                Integer sliceType = readUev(data, pos, endByte);
+                Integer sliceType = readUev(data, slicePos, endByte);
                 return sliceType != null && sliceType <= 9;
-            }
             case 6:  // SEI
             case 9:  // AUD
                 return true;

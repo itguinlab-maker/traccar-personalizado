@@ -9,21 +9,51 @@ public class HikvisionEvent {
     private int enter;
     private int exit;
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public String getId() {
+        return id;
+    }
 
-    public long getDeviceId() { return deviceId; }
-    public void setDeviceId(long deviceId) { this.deviceId = deviceId; }
+    public void setId(String id) {
+        this.id = id;
+    }
 
-    public String getDateTime() { return dateTime; }
-    public void setDateTime(String dateTime) { this.dateTime = dateTime; }
+    public long getDeviceId() {
+        return deviceId;
+    }
 
-    public int getChannel() { return channel; }
-    public void setChannel(int channel) { this.channel = channel; }
+    public void setDeviceId(long deviceId) {
+        this.deviceId = deviceId;
+    }
 
-    public int getEnter() { return enter; }
-    public void setEnter(int enter) { this.enter = enter; }
+    public String getDateTime() {
+        return dateTime;
+    }
 
-    public int getExit() { return exit; }
-    public void setExit(int exit) { this.exit = exit; }
+    public void setDateTime(String dateTime) {
+        this.dateTime = dateTime;
+    }
+
+    public int getChannel() {
+        return channel;
+    }
+
+    public void setChannel(int channel) {
+        this.channel = channel;
+    }
+
+    public int getEnter() {
+        return enter;
+    }
+
+    public void setEnter(int enter) {
+        this.enter = enter;
+    }
+
+    public int getExit() {
+        return exit;
+    }
+
+    public void setExit(int exit) {
+        this.exit = exit;
+    }
 }

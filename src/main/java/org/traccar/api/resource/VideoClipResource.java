@@ -76,7 +76,8 @@ public class VideoClipResource extends BaseResource {
         permissionsService.checkPermission(Device.class, getUserId(), deviceId);
 
         String clipId = clipManager.createSession(deviceId, channel, endTime - startTime);
-        LOGGER.info("VIDEOCLIP REQUEST deviceId={} ch={} start={} end={} -> clipId={}", deviceId, channel, startTime, endTime, clipId);
+        LOGGER.info("VIDEOCLIP REQUEST deviceId={} ch={} start={} end={} -> clipId={}",
+                deviceId, channel, startTime, endTime, clipId);
 
         Command command = new Command();
         command.setDeviceId(deviceId);

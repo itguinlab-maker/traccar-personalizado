@@ -102,7 +102,8 @@ public class VehicleService {
             syncForwardingGroup(updated.getCompany(), adminMode);
         }
 
-        if (oldDeviceId > 0 && (oldDeviceId != updated.getDeviceId() || !Objects.equals(oldCompany, updated.getCompany()))) {
+        if (oldDeviceId > 0
+                && (oldDeviceId != updated.getDeviceId() || !Objects.equals(oldCompany, updated.getCompany()))) {
             syncDeviceGroup(oldDeviceId, null);
         }
         syncDeviceGroup(updated.getDeviceId(), updated.getCompany());
@@ -138,7 +139,8 @@ public class VehicleService {
                 if (!groups.isEmpty()) {
                     groupId = groups.get(0).getId();
                 } else {
-                    LOGGER.warn("VEHICLE no existe grupo de Traccar con nombre '{}', el dispositivo {} no se asignará", company, deviceId);
+                    LOGGER.warn("VEHICLE no existe grupo de Traccar con nombre '{}', el dispositivo {} no se asignará",
+                            company, deviceId);
                     return;
                 }
             }
