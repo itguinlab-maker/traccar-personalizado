@@ -11,6 +11,7 @@ services:
       - "21081:21081"
       - "21081:21081/udp"
       - "8400:8400"
+      - "5263:5263"
     env_file:
       - path: .env
         required: false
