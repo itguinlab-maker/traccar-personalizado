@@ -196,7 +196,7 @@ public class HikvisionEventResource extends BaseResource {
                 ProcessBuilder pb = new ProcessBuilder(
                         "ffmpeg", "-y",
                         "-rtsp_transport", "tcp",
-                        "-stimeout", "15000000",  // 15s socket stall timeout (microseconds)
+                        "-timeout", "15000000",  // 15s socket stall timeout (µs) — ffmpeg 8 renamed -stimeout
                         "-i", finalUrl,
                         "-t", String.valueOf(finalDur),
                         "-c", "copy",
