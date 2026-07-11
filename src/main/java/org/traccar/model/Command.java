@@ -63,6 +63,7 @@ public class Command extends BaseCommand {
     public static final String TYPE_VIDEO_START = "videoStart";
     public static final String TYPE_VIDEO_STOP = "videoStop";
     public static final String TYPE_VIDEO_DOWNLOAD = "videoDownload";
+    public static final String TYPE_VIDEO_QUERY = "videoResourceQuery";
 
     public static final String TYPE_ALARM_GEOFENCE = "alarmGeofence";
     public static final String TYPE_ALARM_BATTERY = "alarmBattery";

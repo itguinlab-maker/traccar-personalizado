@@ -173,6 +173,25 @@ public class Jt808ProtocolEncoder extends BaseProtocolEncoder {
                             dlHost, dlPort, command.getInteger(Command.KEY_INDEX, 1), startEpoch, endEpoch, zone);
                     return decoder.formatMessage(
                             Jt808ProtocolDecoder.MSG_VIDEO_PLAYBACK, id, false, data);
+                case Command.TYPE_VIDEO_QUERY:
+                    String qTzName = AttributeUtil.lookup(
+                            getCacheManager(), Keys.DECODER_TIMEZONE, command.getDeviceId());
+                    ZoneId qZone = ZoneId.of(qTzName != null ? qTzName : "GMT-5");
+                    DateTimeFormatter qFmt = DateTimeFormatter.ofPattern("yyMMddHHmmss").withZone(qZone);
+                    long qStart = command.getLong(Command.KEY_START_TIME);
+                    long qEnd = command.getLong(Command.KEY_END_TIME);
+                    data.writeByte(command.getInteger(Command.KEY_INDEX, 0)); // channel, 0 = all
+                    data.writeBytes(DataConverter.parseHex(qFmt.format(Instant.ofEpochSecond(qStart))));
+                    data.writeBytes(DataConverter.parseHex(qFmt.format(Instant.ofEpochSecond(qEnd))));
+                    data.writeLong(0); // alarm sign: all
+                    data.writeByte(command.getInteger("resourceType", 0)); // 0 = audio/video
+                    data.writeByte(command.getInteger("streamType", 0)); // 0 = all streams
+                    data.writeByte(command.getInteger("storageType", 0)); // 0 = all storage
+                    LOGGER.info("VIDEOQUERY COMMAND 0x9205 deviceId={} ch={} start={} end={} tz={}",
+                            command.getDeviceId(), command.getInteger(Command.KEY_INDEX, 0),
+                            qStart, qEnd, qZone);
+                    return decoder.formatMessage(
+                            Jt808ProtocolDecoder.MSG_VIDEO_RESOURCE_QUERY, id, false, data);
                 default:
                     return null;
             }

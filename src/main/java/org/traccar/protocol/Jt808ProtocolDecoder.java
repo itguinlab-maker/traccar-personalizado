@@ -92,6 +92,8 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
     public static final int MSG_VIDEO_REQUEST = 0x9101;
     public static final int MSG_VIDEO_CONTROL = 0x9102;
     public static final int MSG_VIDEO_PLAYBACK = 0x9202;
+    public static final int MSG_VIDEO_RESOURCE_QUERY = 0x9205;
+    public static final int MSG_VIDEO_RESOURCE_LIST = 0x1205;
     public static final int MSG_STREAMAX_COUNTING = 0x0B19;
     public static final int MSG_VIDEO_PLATFORM_MSG = 0x0b02;
 
@@ -424,6 +426,31 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
             sendGeneralResponse(channel, remoteAddress, id, type, index);
 
             return decodeStreamaxCounting(deviceSession, buf, type);
+
+        } else if (type == MSG_VIDEO_RESOURCE_LIST) {
+
+            sendGeneralResponse(channel, remoteAddress, id, type, index);
+
+            int responseSerial = buf.readUnsignedShort();
+            long totalResources = buf.readUnsignedInt();
+            LOGGER.info("VIDEOQUERY 0x1205 deviceId={} serial={} total={}",
+                    deviceSession.getDeviceId(), responseSerial, totalResources);
+
+            int endIndex = buf.writerIndex() - 2;
+            int item = 0;
+            while (buf.readerIndex() + 28 <= endIndex && item < totalResources) {
+                int resourceChannel = buf.readUnsignedByte();
+                String startTime = ByteBufUtil.hexDump(buf.readSlice(6));
+                String endTime = ByteBufUtil.hexDump(buf.readSlice(6));
+                buf.skipBytes(8); // alarm sign
+                int avType = buf.readUnsignedByte();
+                int streamType = buf.readUnsignedByte();
+                int storageType = buf.readUnsignedByte();
+                long fileSize = buf.readUnsignedInt();
+                LOGGER.info("VIDEOQUERY item#{} ch={} start={} end={} avType={} stream={} storage={} bytes={}",
+                        item, resourceChannel, startTime, endTime, avType, streamType, storageType, fileSize);
+                item++;
+            }
 
         } else if (type == MSG_TIME_SYNC_REQUEST) {
 
