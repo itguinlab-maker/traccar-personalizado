@@ -25,6 +25,8 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.traccar.config.Config;
 import org.traccar.config.Keys;
+import org.traccar.datausage.DataUsageChannelHandler;
+import org.traccar.datausage.DataUsageManager;
 import org.traccar.handler.network.AcknowledgementHandler;
 import org.traccar.handler.network.MainEventHandler;
 import org.traccar.handler.network.NetworkForwarderHandler;
@@ -91,6 +93,9 @@ public abstract class BasePipelineFactory extends ChannelInitializer<Channel> {
             pipeline.addLast(new IdleStateHandler(timeout, 0, 0));
         }
         pipeline.addLast(new OpenChannelHandler(connector));
+        if (!connector.isDatagram()) {
+            pipeline.addLast(new DataUsageChannelHandler(injector.getInstance(DataUsageManager.class)));
+        }
         if (config.hasKey(Keys.SERVER_FORWARD)) {
             int port = config.getInteger(Keys.PROTOCOL_PORT.withPrefix(protocol));
             pipeline.addLast(injectMembers(new NetworkForwarderHandler(port)));

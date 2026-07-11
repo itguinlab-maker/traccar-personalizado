@@ -53,6 +53,8 @@ public class DataUsageResource extends BaseResource {
             item.put("lastUpdate", device != null ? device.getLastUpdate() : null);
             item.put("lastReceived", usage.getLastReceived());
             item.put("totalBytes", usage.getTotalBytes());
+            item.put("totalReceivedBytes", usage.getTotalReceivedBytes());
+            item.put("totalSentBytes", usage.getTotalSentBytes());
             item.put("totalMessages", usage.getTotalMessages());
             item.put("monthBytes", usage.getMonthlyBytes().getOrDefault(currentMonth, 0L));
             item.put("monthlyBytes", usage.getMonthlyBytes());

@@ -19,6 +19,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import org.traccar.config.Keys;
 import org.traccar.database.CommandsManager;
+import org.traccar.datausage.DataUsageManager;
 import org.traccar.database.MediaManager;
 import org.traccar.database.StatisticsManager;
 import org.traccar.helper.UnitsConverter;
@@ -50,6 +51,7 @@ public abstract class BaseProtocolDecoder extends ExtendedObjectDecoder {
     private StatisticsManager statisticsManager;
     private MediaManager mediaManager;
     private CommandsManager commandsManager;
+    private DataUsageManager dataUsageManager;
 
     private String modelOverride;
 
@@ -84,6 +86,15 @@ public abstract class BaseProtocolDecoder extends ExtendedObjectDecoder {
     @Inject
     public void setCommandsManager(CommandsManager commandsManager) {
         this.commandsManager = commandsManager;
+    }
+
+    @Inject
+    public void setDataUsageManager(DataUsageManager dataUsageManager) {
+        this.dataUsageManager = dataUsageManager;
+    }
+
+    protected DataUsageManager getDataUsageManager() {
+        return dataUsageManager;
     }
 
     public CommandsManager getCommandsManager() {
@@ -132,7 +143,12 @@ public abstract class BaseProtocolDecoder extends ExtendedObjectDecoder {
 
     public DeviceSession getDeviceSession(Channel channel, SocketAddress remoteAddress, String... uniqueIds) {
         try {
-            return connectionManager.getDeviceSession(protocol, channel, remoteAddress, uniqueIds);
+            DeviceSession deviceSession = connectionManager.getDeviceSession(
+                    protocol, channel, remoteAddress, uniqueIds);
+            if (deviceSession != null && dataUsageManager != null && channel != null) {
+                dataUsageManager.flushChannel(channel, deviceSession.getDeviceId(), true);
+            }
+            return deviceSession;
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

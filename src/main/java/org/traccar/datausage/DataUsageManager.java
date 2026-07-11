@@ -2,6 +2,8 @@ package org.traccar.datausage;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.netty.channel.Channel;
+import io.netty.util.AttributeKey;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
@@ -14,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Contador de datos transmitidos por dispositivo. Acumula bytes por trama
@@ -36,18 +39,41 @@ public class DataUsageManager {
         load();
     }
 
-    public void addReceived(long deviceId, int bytes) {
+    /**
+     * Acredita al dispositivo los bytes pendientes acumulados en el canal por
+     * {@link DataUsageChannelHandler} (ambas direcciones) y marca el canal
+     * para el flush final al cerrarse la conexion.
+     */
+    public void flushChannel(Channel channel, long deviceId, boolean countMessage) {
+        channel.attr(DataUsageChannelHandler.DEVICE_ID).set(deviceId);
+        long rx = getAndReset(channel, DataUsageChannelHandler.PENDING_RX);
+        long tx = getAndReset(channel, DataUsageChannelHandler.PENDING_TX);
+        if (rx > 0 || tx > 0 || countMessage) {
+            apply(deviceId, rx, tx, countMessage ? 1 : 0);
+        }
+    }
+
+    private static long getAndReset(Channel channel, AttributeKey<AtomicLong> key) {
+        AtomicLong counter = channel.attr(key).get();
+        return counter != null ? counter.getAndSet(0) : 0;
+    }
+
+    private void apply(long deviceId, long rxBytes, long txBytes, int messages) {
         DeviceDataUsage entry = usage.computeIfAbsent(deviceId, id -> {
             DeviceDataUsage created = new DeviceDataUsage();
             created.setDeviceId(id);
             return created;
         });
         synchronized (entry) {
-            entry.setTotalBytes(entry.getTotalBytes() + bytes);
-            entry.setTotalMessages(entry.getTotalMessages() + 1);
-            entry.setLastReceived(System.currentTimeMillis());
+            entry.setTotalReceivedBytes(entry.getTotalReceivedBytes() + rxBytes);
+            entry.setTotalSentBytes(entry.getTotalSentBytes() + txBytes);
+            entry.setTotalBytes(entry.getTotalBytes() + rxBytes + txBytes);
+            entry.setTotalMessages(entry.getTotalMessages() + messages);
+            if (rxBytes > 0) {
+                entry.setLastReceived(System.currentTimeMillis());
+            }
             String month = LocalDate.now(ZoneOffset.UTC).toString().substring(0, 7);
-            entry.getMonthlyBytes().merge(month, (long) bytes, Long::sum);
+            entry.getMonthlyBytes().merge(month, rxBytes + txBytes, Long::sum);
         }
         long now = System.currentTimeMillis();
         if (now - lastSave > SAVE_INTERVAL_MS) {

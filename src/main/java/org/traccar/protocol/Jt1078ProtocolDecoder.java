@@ -102,6 +102,10 @@ public class Jt1078ProtocolDecoder extends BaseProtocolDecoder {
             return null;
         }
 
+        if (getDataUsageManager() != null && channel != null) {
+            getDataUsageManager().flushChannel(channel, device.getId(), false);
+        }
+
         if (streamDeviceId != device.getId() || streamChannel != videoChannel) {
             LOGGER.info("JT1078 FRAME deviceId={} uniqueId={} ch={} dataType={} subpkg={} bodyLen={}",
                     device.getId(), uniqueId, videoChannel, dataType, subpackageType, bodyLength);

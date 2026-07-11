@@ -12,6 +12,8 @@ public class DeviceDataUsage {
 
     private long deviceId;
     private long totalBytes;
+    private long totalReceivedBytes;
+    private long totalSentBytes;
     private long totalMessages;
     private long lastReceived;
     private Map<String, Long> monthlyBytes = new ConcurrentHashMap<>();
@@ -30,6 +32,22 @@ public class DeviceDataUsage {
 
     public void setTotalBytes(long totalBytes) {
         this.totalBytes = totalBytes;
+    }
+
+    public long getTotalReceivedBytes() {
+        return totalReceivedBytes;
+    }
+
+    public void setTotalReceivedBytes(long totalReceivedBytes) {
+        this.totalReceivedBytes = totalReceivedBytes;
+    }
+
+    public long getTotalSentBytes() {
+        return totalSentBytes;
+    }
+
+    public void setTotalSentBytes(long totalSentBytes) {
+        this.totalSentBytes = totalSentBytes;
     }
 
     public long getTotalMessages() {
