@@ -347,9 +347,9 @@ public class MainModule extends AbstractModule {
     @Singleton
     @Provides
     public static FilterHandler provideFilterHandler(
-            Config config, CacheManager cacheManager, StatisticsManager statisticsManager) {
+            Config config, CacheManager cacheManager, StatisticsManager statisticsManager, Storage storage) {
         if (config.getBoolean(Keys.FILTER_ENABLE)) {
-            return new FilterHandler(cacheManager, statisticsManager);
+            return new FilterHandler(cacheManager, statisticsManager, storage);
         }
         return null;
     }

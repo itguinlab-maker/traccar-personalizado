@@ -1573,6 +1573,15 @@ public final class Keys {
             List.of(KeyType.CONFIG, KeyType.DEVICE));
 
     /**
+     * Filter positions that already exist in the database for the same device and fix time. Designed to ignore
+     * device retransmission loops that resend history already stored. Only out-of-order positions (older than the
+     * latest known position) trigger the database check, so live traffic is not affected.
+     */
+    public static final ConfigKey<Boolean> FILTER_DUPLICATE_STORED = new BooleanConfigKey(
+            "filter.duplicateStored",
+            List.of(KeyType.CONFIG, KeyType.DEVICE));
+
+    /**
      * Filter messages that do not have GPS location. If they are not filtered, they will include the last known
      * location.
      */

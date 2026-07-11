@@ -26,6 +26,11 @@ import org.traccar.model.Calendar;
 import org.traccar.model.Device;
 import org.traccar.model.Position;
 import org.traccar.session.cache.CacheManager;
+import org.traccar.storage.Storage;
+import org.traccar.storage.StorageException;
+import org.traccar.storage.query.Columns;
+import org.traccar.storage.query.Condition;
+import org.traccar.storage.query.Request;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -36,11 +41,13 @@ public class FilterHandler extends BasePositionHandler {
 
     private final CacheManager cacheManager;
     private final StatisticsManager statisticsManager;
+    private final Storage storage;
 
     @Inject
-    public FilterHandler(CacheManager cacheManager, StatisticsManager statisticsManager) {
+    public FilterHandler(CacheManager cacheManager, StatisticsManager statisticsManager, Storage storage) {
         this.cacheManager = cacheManager;
         this.statisticsManager = statisticsManager;
+        this.storage = storage;
     }
 
     private boolean filterInvalid(Position position) {
@@ -64,6 +71,24 @@ public class FilterHandler extends BasePositionHandler {
                 }
             }
             return true;
+        }
+        return false;
+    }
+
+    private boolean filterDuplicateStored(Position position, Position last) {
+        Boolean filterDuplicateStored = AttributeUtil.lookup(
+                cacheManager, Keys.FILTER_DUPLICATE_STORED, position.getDeviceId());
+        if (Boolean.TRUE.equals(filterDuplicateStored)
+                && last != null && !position.getFixTime().after(last.getFixTime())) {
+            try {
+                return !storage.getObjects(Position.class, new Request(
+                        new Columns.Include("id"),
+                        new Condition.And(
+                                new Condition.Equals("deviceId", position.getDeviceId()),
+                                new Condition.Equals("fixTime", position.getFixTime())))).isEmpty();
+            } catch (StorageException e) {
+                LOGGER.warn("DuplicateStored check failed: {}", e.getMessage());
+            }
         }
         return false;
     }
@@ -195,6 +220,9 @@ public class FilterHandler extends BasePositionHandler {
         Position last = cacheManager.getPosition(deviceId);
         if (filterDuplicate(position, last) && !skipLimit(position, last) && !skipAttributes(position)) {
             filterTypes.add("Duplicate");
+        }
+        if (filterDuplicateStored(position, last) && !skipLimit(position, last) && !skipAttributes(position)) {
+            filterTypes.add("DuplicateStored");
         }
         if (filterStatic(position) && !skipLimit(position, last) && !skipAttributes(position)) {
             filterTypes.add("Static");

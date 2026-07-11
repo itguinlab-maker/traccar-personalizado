@@ -8,9 +8,11 @@ import org.traccar.config.Keys;
 import org.traccar.model.Device;
 import org.traccar.model.Position;
 import org.traccar.session.cache.CacheManager;
+import org.traccar.storage.Storage;
 
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,7 +34,7 @@ public class FilterHandlerTest extends BaseTest {
         var cacheManager = mock(CacheManager.class);
         when(cacheManager.getConfig()).thenReturn(config);
         when(cacheManager.getObject(any(), anyLong())).thenReturn(device);
-        passingHandler = new FilterHandler(cacheManager, null);
+        passingHandler = new FilterHandler(cacheManager, null, null);
     }
 
     @BeforeEach
@@ -53,7 +55,7 @@ public class FilterHandlerTest extends BaseTest {
         var cacheManager = mock(CacheManager.class);
         when(cacheManager.getConfig()).thenReturn(config);
         when(cacheManager.getObject(any(), anyLong())).thenReturn(device);
-        filteringHandler = new FilterHandler(cacheManager, null);
+        filteringHandler = new FilterHandler(cacheManager, null, null);
     }
 
     private Position createPosition(Date time, boolean valid, double speed) {
@@ -96,6 +98,40 @@ public class FilterHandlerTest extends BaseTest {
         position.addAlarm(Position.ALARM_GENERAL);
 
         assertFalse(filteringHandler.filter(position));
+
+    }
+
+    @Test
+    public void testDuplicateStored() throws Exception {
+
+        var device = mock(Device.class);
+        when(device.getAttributes()).thenReturn(new HashMap<>());
+        var config = mock(Config.class);
+        when(config.getString(Keys.FILTER_DUPLICATE_STORED.getKey())).thenReturn("true");
+        var cacheManager = mock(CacheManager.class);
+        when(cacheManager.getConfig()).thenReturn(config);
+        when(cacheManager.getObject(any(), anyLong())).thenReturn(device);
+
+        // la ultima posicion conocida es mas nueva que la entrante (reenvio fuera de orden)
+        Position last = createPosition(new Date(2000000), true, 10);
+        when(cacheManager.getPosition(anyLong())).thenReturn(last);
+
+        var storage = mock(Storage.class);
+        var handler = new FilterHandler(cacheManager, null, storage);
+
+        Position resend = createPosition(new Date(1000000), true, 10);
+
+        // ya existe en BD → se filtra
+        when(storage.getObjects(any(), any())).thenReturn(List.of(new Position()));
+        assertTrue(handler.filter(resend));
+
+        // no existe en BD (dato historico legitimo) → pasa
+        when(storage.getObjects(any(), any())).thenReturn(List.of());
+        assertFalse(handler.filter(resend));
+
+        // posicion en vivo (mas nueva que la ultima) → pasa sin consultar BD
+        Position live = createPosition(new Date(3000000), true, 10);
+        assertFalse(handler.filter(live));
 
     }
 
