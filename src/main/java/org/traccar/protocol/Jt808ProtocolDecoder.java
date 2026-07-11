@@ -19,9 +19,11 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.traccar.BaseProtocolDecoder;
+import org.traccar.datausage.DataUsageManager;
 import org.traccar.helper.BufferUtil;
 import org.traccar.model.WifiAccessPoint;
 import org.traccar.session.DeviceSession;
@@ -57,6 +59,13 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter
             .ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
+
+    private DataUsageManager dataUsageManager;
+
+    @Inject
+    public void setDataUsageManager(DataUsageManager dataUsageManager) {
+        this.dataUsageManager = dataUsageManager;
+    }
 
     public Jt808ProtocolDecoder(Protocol protocol) {
         super(protocol);
@@ -341,6 +350,10 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
         DeviceSession deviceSession = getDeviceSession(channel, remoteAddress, decodeId(id));
         if (deviceSession == null) {
             return null;
+        }
+
+        if (dataUsageManager != null) {
+            dataUsageManager.addReceived(deviceSession.getDeviceId(), buf.writerIndex());
         }
 
         if (!deviceSession.contains(DeviceSession.KEY_TIMEZONE)) {
