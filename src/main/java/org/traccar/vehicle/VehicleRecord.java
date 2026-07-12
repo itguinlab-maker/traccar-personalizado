@@ -3,7 +3,8 @@ package org.traccar.vehicle;
 public class VehicleRecord {
 
     private String id;
-    private long deviceId;
+    private long deviceId;          // dispositivo/cámara delantera (principal)
+    private long rearDeviceId;      // dispositivo/cámara trasera (0 si el vehículo tiene una sola)
     private String plate;
     private String company;
     private String internalNumber;
@@ -33,6 +34,14 @@ public class VehicleRecord {
 
     public void setDeviceId(long deviceId) {
         this.deviceId = deviceId;
+    }
+
+    public long getRearDeviceId() {
+        return rearDeviceId;
+    }
+
+    public void setRearDeviceId(long rearDeviceId) {
+        this.rearDeviceId = rearDeviceId;
     }
 
     public String getPlate() {

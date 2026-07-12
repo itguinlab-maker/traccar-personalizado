@@ -73,9 +73,13 @@ public class VehicleService {
         if (record.getDeviceId() > 0) {
             deviceIndex.put(record.getDeviceId(), record.getId());
         }
+        if (record.getRearDeviceId() > 0) {
+            deviceIndex.put(record.getRearDeviceId(), record.getId());
+        }
         save();
         syncForwardingGroup(record.getCompany(), adminMode);
         syncDeviceGroup(record.getDeviceId(), record.getCompany());
+        syncDeviceGroup(record.getRearDeviceId(), record.getCompany());
         return record;
     }
 
@@ -87,13 +91,20 @@ public class VehicleService {
         if (existing.getDeviceId() > 0) {
             deviceIndex.remove(existing.getDeviceId());
         }
+        if (existing.getRearDeviceId() > 0) {
+            deviceIndex.remove(existing.getRearDeviceId());
+        }
         String oldCompany = existing.getCompany();
         long oldDeviceId = existing.getDeviceId();
+        long oldRearDeviceId = existing.getRearDeviceId();
 
         updated.setId(id);
         records.put(id, updated);
         if (updated.getDeviceId() > 0) {
             deviceIndex.put(updated.getDeviceId(), id);
+        }
+        if (updated.getRearDeviceId() > 0) {
+            deviceIndex.put(updated.getRearDeviceId(), id);
         }
         save();
 
@@ -106,7 +117,13 @@ public class VehicleService {
                 && (oldDeviceId != updated.getDeviceId() || !Objects.equals(oldCompany, updated.getCompany()))) {
             syncDeviceGroup(oldDeviceId, null);
         }
+        if (oldRearDeviceId > 0
+                && (oldRearDeviceId != updated.getRearDeviceId()
+                        || !Objects.equals(oldCompany, updated.getCompany()))) {
+            syncDeviceGroup(oldRearDeviceId, null);
+        }
         syncDeviceGroup(updated.getDeviceId(), updated.getCompany());
+        syncDeviceGroup(updated.getRearDeviceId(), updated.getCompany());
         return Optional.of(updated);
     }
 
@@ -118,9 +135,13 @@ public class VehicleService {
         if (record.getDeviceId() > 0) {
             deviceIndex.remove(record.getDeviceId());
         }
+        if (record.getRearDeviceId() > 0) {
+            deviceIndex.remove(record.getRearDeviceId());
+        }
         save();
         syncForwardingGroup(record.getCompany(), adminMode);
         syncDeviceGroup(record.getDeviceId(), null);
+        syncDeviceGroup(record.getRearDeviceId(), null);
         return true;
     }
 
