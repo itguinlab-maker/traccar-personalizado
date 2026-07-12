@@ -17,6 +17,8 @@ import jakarta.ws.rs.core.StreamingOutput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.traccar.api.BaseResource;
+import org.traccar.config.Config;
+import org.traccar.config.Keys;
 import org.traccar.hikvision.HikvisionEvent;
 import org.traccar.hikvision.HikvisionEventService;
 import org.traccar.model.Device;
@@ -49,6 +51,24 @@ public class HikvisionEventResource extends BaseResource {
 
     @Inject
     private ConnectionManager connectionManager;
+
+    @Inject
+    private Config config;
+
+    /**
+     * Resuelve el deviceID ISUP de la cámara correspondiente a un canal/puerta del vehículo.
+     * Soporta múltiples cámaras por vehículo (una por puerta): atributos por canal
+     * {@code isupCamera1}, {@code isupCamera2}, ... y como respaldo {@code isupDeviceId}
+     * (vehículo con una sola cámara). Devuelve null si el canal no tiene cámara ISUP.
+     */
+    private String resolveIsupCamera(Device device, int channel) {
+        Object perChannel = device.getAttributes().get("isupCamera" + channel);
+        if (perChannel instanceof String s && !s.isEmpty()) {
+            return s;
+        }
+        Object single = device.getAttributes().get("isupDeviceId");
+        return single instanceof String s && !s.isEmpty() ? s : null;
+    }
 
     @GET
     @Path("events")
@@ -146,11 +166,6 @@ public class HikvisionEventResource extends BaseResource {
             return Response.status(Response.Status.NOT_FOUND).entity("Device not found").build();
         }
 
-        String ip    = (String) device.getAttributes().getOrDefault("hikIp",   "");
-        String user  = (String) device.getAttributes().getOrDefault("hikUser",  "admin");
-        String pass  = (String) device.getAttributes().getOrDefault("hikPass",  "admin");
-        String tzOff = (String) device.getAttributes().getOrDefault("hikTzOffset", "-05:00");
-
         Instant from, to;
         try {
             from = Instant.parse(fromIso);
@@ -158,6 +173,19 @@ public class HikvisionEventResource extends BaseResource {
         } catch (Exception e) {
             return Response.status(Response.Status.BAD_REQUEST).entity("Formato de tiempo inválido").build();
         }
+
+        // Ruta ISUP: si el canal tiene una cámara ISUP configurada, la descarga se hace por
+        // el gateway (la cámara sube el video — funciona con SIM restringida). Distingue
+        // cámaras por canal/puerta (isupCamera1=delantera, isupCamera2=trasera).
+        String isupCamera = resolveIsupCamera(device, channel);
+        if (isupCamera != null) {
+            return downloadClipIsup(isupCamera, channel, from, to);
+        }
+
+        String ip    = (String) device.getAttributes().getOrDefault("hikIp",   "");
+        String user  = (String) device.getAttributes().getOrDefault("hikUser",  "admin");
+        String pass  = (String) device.getAttributes().getOrDefault("hikPass",  "admin");
+        String tzOff = (String) device.getAttributes().getOrDefault("hikTzOffset", "-05:00");
 
         long durSec = Duration.between(from, to).getSeconds();
         if (durSec <= 0) {
@@ -247,6 +275,43 @@ public class HikvisionEventResource extends BaseResource {
             }
         };
 
+        return Response.ok(out)
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .header("Content-Type", "video/mp4")
+                .header("Cache-Control", "no-store, no-cache")
+                .build();
+    }
+
+    /**
+     * Descarga el clip vía el gateway ISUP (la cámara sube el video por su conexión saliente).
+     * Proxea GET {gateway}/playback?deviceId=&channel=&from=&to= y reenvía el MP4 al cliente.
+     */
+    private Response downloadClipIsup(String isupCamera, int channel, Instant from, Instant to) {
+        String gateway = config.getString(Keys.ISUP_GATEWAY_URL);
+        String url = String.format("%s/playback?deviceId=%s&channel=%d&from=%d&to=%d",
+                gateway, isupCamera, channel, from.getEpochSecond(), to.getEpochSecond());
+        LOGGER.info("HIK clip ISUP camera={} ch={} {}..{} gateway={}",
+                isupCamera, channel, from, to, gateway);
+
+        StreamingOutput out = output -> {
+            java.net.HttpURLConnection conn =
+                    (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(150_000); // la cámara sube el video en tiempo casi real
+            conn.connect();
+            int code = conn.getResponseCode();
+            if (code != 200) {
+                throw new java.io.IOException("gateway ISUP respondió " + code);
+            }
+            try (InputStream is = conn.getInputStream()) {
+                is.transferTo(output);
+            } finally {
+                conn.disconnect();
+            }
+        };
+
+        String filename = String.format("isup_%s_ch%d_%s.mp4",
+                isupCamera, channel, from.toString().replaceAll("[:.]", "-"));
         return Response.ok(out)
                 .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
                 .header("Content-Type", "video/mp4")
