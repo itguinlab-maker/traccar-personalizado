@@ -133,6 +133,14 @@ public class FilterHandlerTest extends BaseTest {
         Position live = createPosition(new Date(3000000), true, 10);
         assertFalse(handler.filter(live));
 
+        // un evento de conteo (passengersOn/Off) NUNCA se filtra por duplicateStored,
+        // aunque el storage devolviera una coincidencia por fixTime
+        Position countingEvent = createPosition(new Date(1000000), true, 0);
+        countingEvent.set("passengersOn", 5);
+        countingEvent.set("passengersOff", 2);
+        when(storage.getObjects(any(), any())).thenReturn(List.of(new Position()));
+        assertFalse(handler.filter(countingEvent));
+
     }
 
 }

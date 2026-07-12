@@ -80,6 +80,12 @@ public class FilterHandler extends BasePositionHandler {
                 cacheManager, Keys.FILTER_DUPLICATE_STORED, position.getDeviceId());
         if (Boolean.TRUE.equals(filterDuplicateStored)
                 && last != null && !position.getFixTime().after(last.getFixTime())) {
+            // Los eventos de conteo (passengersOn/Off) NUNCA se filtran por este mecanismo:
+            // llevan carga única aunque compartan fixTime con una posición GPS ya guardada.
+            // El filtro solo evita el reenvío de posiciones GPS puras (bucle de retransmisión).
+            if (position.hasAttribute("passengersOn") || position.hasAttribute("passengersOff")) {
+                return false;
+            }
             try {
                 return !storage.getObjects(Position.class, new Request(
                         new Columns.Include("id"),
