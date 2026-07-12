@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.traccar.forwarding.ExternalForwardingManager;
 import org.traccar.model.Device;
 import org.traccar.model.Group;
+import org.traccar.model.Permission;
+import org.traccar.model.User;
 import org.traccar.storage.Storage;
 import org.traccar.storage.StorageException;
 import org.traccar.storage.query.Columns;
@@ -81,6 +83,81 @@ public class VehicleService {
         syncDeviceGroup(record.getDeviceId(), record.getCompany());
         syncDeviceGroup(record.getRearDeviceId(), record.getCompany());
         return record;
+    }
+
+    /**
+     * Alta unificada: crea/vincula/actualiza los dispositivos (cámaras) y crea el registro
+     * del vehículo en una sola operación. Solo para administradores (validado en el recurso).
+     */
+    public VehicleRecord provision(VehicleProvision provision, long userId) throws StorageException {
+        VehicleRecord record = provision.getVehicle();
+        String company = record != null ? record.getCompany() : null;
+
+        long frontId = resolveDevice(provision.getFront(), userId);
+        record.setDeviceId(frontId);
+
+        boolean hikvision = "hikvision".equalsIgnoreCase(provision.getCameraType());
+        if (hikvision && provision.getRear() != null) {
+            long rearId = resolveDevice(provision.getRear(), userId);
+            record.setRearDeviceId(rearId);
+        } else {
+            record.setRearDeviceId(0);
+        }
+
+        LOGGER.info("PROVISION vehículo placa={} tipo={} front={} rear={} empresa={}",
+                record.getPlate(), provision.getCameraType(), frontId, record.getRearDeviceId(), company);
+        return create(record, true);
+    }
+
+    /**
+     * Resuelve un dispositivo según el modo: crea uno nuevo (con permiso para el usuario),
+     * vincula uno existente, o vincula y actualiza sus atributos. Devuelve el deviceId.
+     */
+    private long resolveDevice(VehicleProvision.DeviceSpec spec, long userId) throws StorageException {
+        if (spec == null) {
+            return 0;
+        }
+        String mode = spec.getMode() != null ? spec.getMode() : "create";
+
+        if ("create".equalsIgnoreCase(mode)) {
+            Device device = new Device();
+            device.setName(spec.getName() != null && !spec.getName().isEmpty()
+                    ? spec.getName() : spec.getUniqueId());
+            device.setUniqueId(spec.getUniqueId());
+            applyAttributes(device, spec.getAttributes());
+            long id = storage.addObject(device, new Request(new Columns.Exclude("id")));
+            // Vincula el dispositivo al admin que lo crea para que lo vea en la UI.
+            // El service account (ID sintético) ve todo y no persiste como usuario real.
+            if (userId > 0 && userId != org.traccar.api.security.ServiceAccountUser.ID) {
+                storage.addPermission(new Permission(User.class, userId, Device.class, id));
+            }
+            LOGGER.info("PROVISION device creado id={} uniqueId={}", id, spec.getUniqueId());
+            return id;
+        }
+
+        // link o update: usa el dispositivo existente
+        Device device = storage.getObject(Device.class, new Request(
+                new Columns.All(), new Condition.Equals("id", spec.getDeviceId())));
+        if (device == null) {
+            throw new StorageException("Dispositivo " + spec.getDeviceId() + " no existe para vincular");
+        }
+        if ("update".equalsIgnoreCase(mode)) {
+            applyAttributes(device, spec.getAttributes());
+            storage.updateObject(device, new Request(
+                    new Columns.Include("attributes"), new Condition.Equals("id", device.getId())));
+            LOGGER.info("PROVISION device actualizado id={}", device.getId());
+        }
+        return spec.getDeviceId();
+    }
+
+    private void applyAttributes(Device device, Map<String, Object> attributes) {
+        if (attributes != null) {
+            attributes.forEach((k, v) -> {
+                if (v != null) {
+                    device.set(k, String.valueOf(v));
+                }
+            });
+        }
     }
 
     public Optional<VehicleRecord> update(String id, VehicleRecord updated, boolean adminMode) {

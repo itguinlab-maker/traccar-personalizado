@@ -17,6 +17,7 @@ import org.traccar.storage.StorageException;
 import org.traccar.storage.query.Columns;
 import org.traccar.storage.query.Condition;
 import org.traccar.storage.query.Request;
+import org.traccar.vehicle.VehicleProvision;
 import org.traccar.vehicle.VehicleRecord;
 import org.traccar.vehicle.VehicleService;
 
@@ -70,6 +71,31 @@ public class VehicleResource extends BaseResource {
             }
         }
         return Response.ok(service.create(record, isAdmin)).build();
+    }
+
+    @POST
+    @Path("provision")
+    public Response provision(VehicleProvision provision) throws StorageException {
+        if (permissionsService.notAdmin(getUserId())) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(Map.of("error", "Solo administradores pueden dar de alta vehículos con dispositivos"))
+                    .build();
+        }
+        if (provision.getVehicle() == null || provision.getVehicle().getPlate() == null
+                || provision.getVehicle().getPlate().isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "La placa es obligatoria")).build();
+        }
+        if (provision.getFront() == null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "Debe especificar al menos el dispositivo delantero")).build();
+        }
+        try {
+            return Response.ok(service.provision(provision, getUserId())).build();
+        } catch (StorageException e) {
+            return Response.status(Response.Status.CONFLICT)
+                    .entity(Map.of("error", e.getMessage())).build();
+        }
     }
 
     @PUT
