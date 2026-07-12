@@ -127,6 +127,7 @@ public class MainModule extends AbstractModule {
         bind(Config.class).asEagerSingleton();
         bind(Timer.class).to(HashedWheelTimer.class).in(Scopes.SINGLETON);
         bind(org.traccar.hikvision.HikvisionAlertStreamService.class).asEagerSingleton();
+        bind(org.traccar.isup.IsupService.class).asEagerSingleton();
     }
 
     @Singleton

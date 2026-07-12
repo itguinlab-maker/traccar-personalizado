@@ -2090,6 +2090,29 @@ public final class Keys {
             List.of(KeyType.CONFIG));
 
     /**
+     * Habilita el consumo del gateway ISUP (estado online de cámaras Hikvision por ISUP).
+     */
+    public static final ConfigKey<Boolean> ISUP_ENABLE = new BooleanConfigKey(
+            "isup.enable",
+            List.of(KeyType.CONFIG));
+
+    /**
+     * URL base del gateway ISUP (sidecar). Por defecto http://isup-gateway:9098.
+     */
+    public static final ConfigKey<String> ISUP_GATEWAY_URL = new StringConfigKey(
+            "isup.gatewayUrl",
+            List.of(KeyType.CONFIG),
+            "http://isup-gateway:9098");
+
+    /**
+     * Intervalo de sondeo del gateway ISUP en segundos (por defecto 30).
+     */
+    public static final ConfigKey<Integer> ISUP_POLL_INTERVAL = new IntegerConfigKey(
+            "isup.pollInterval",
+            List.of(KeyType.CONFIG),
+            30);
+
+    /**
      * Show logs from unknown devices.
      */
     public static final ConfigKey<Boolean> WEB_SHOW_UNKNOWN_DEVICES = new BooleanConfigKey(
