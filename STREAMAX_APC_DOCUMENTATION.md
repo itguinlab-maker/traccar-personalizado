@@ -73,6 +73,19 @@ seen.add(key);
 
 Aplicado en `GeneralCountingPage` y `CountingEventsPage`.
 
+### 2.4 Deduplicación en el backend (`FilterHandler.java`)
+
+Traccar tiene dos filtros de duplicados a nivel de servidor, ambos con **bypass incondicional para eventos de conteo** (posiciones con `passengersOn`/`passengersOff` nunca se filtran, sin importar la configuración):
+
+| Filtro | Config | Propósito |
+|---|---|---|
+| `filter.duplicate` | por dispositivo/config | Descarta posiciones con mismo `fixTime` que la anterior si no aportan ningún atributo nuevo |
+| `filter.duplicateStored` | `true` en producción (global) | Descarta posiciones cuyo `fixTime` ya existe guardado en BD — evita que un bucle de retransmisión del MDVR (reenvío de historial ya almacenado) sature la base de datos |
+
+**Bug corregido (2026-07-18):** `filter.duplicate` comparaba solo la *presencia* de la clave de atributo entre la posición entrante y la última conocida, no su *valor*. Dos eventos de conteo distintos con el mismo `fixTime` que la última posición (ambos con la clave `passengersOn`, valores distintos) se filtraban como si fueran idénticos, descartando conteo real. Fix: `FilterHandler.filterDuplicate()` ahora también hace bypass incondicional de `passengersOn`/`passengersOff`, igual que ya hacía `filterDuplicateStored()`.
+
+**Importante:** el `filter.duplicateStored` global **no se debe desactivar** — es el que evita el bucle de retransmisión (ver incidente FWK932 documentado en memoria del proyecto). Con el bypass de conteo en ambos filtros, la plataforma recibe todo el conteo legítimo sin reabrir ese riesgo.
+
 ---
 
 ## 3. Backend Java
@@ -273,4 +286,4 @@ Resumen de filtrado en los endpoints de conteo:
 
 ---
 
-*Última actualización: Junio 2026*
+*Última actualización: Julio 2026*
