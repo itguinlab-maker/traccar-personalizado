@@ -63,6 +63,12 @@ public class FilterHandler extends BasePositionHandler {
     }
 
     private boolean filterDuplicate(Position position, Position last) {
+        // Los eventos de conteo (passengersOn/Off) NUNCA se filtran por este mecanismo: la
+        // posición previa puede tener la misma clave de atributo con un valor distinto (otro
+        // evento de conteo), y este filtro solo compara presencia de clave, no valor.
+        if (position.hasAttribute("passengersOn") || position.hasAttribute("passengersOff")) {
+            return false;
+        }
         Boolean filterDuplicate = AttributeUtil.lookup(cacheManager, Keys.FILTER_DUPLICATE, position.getDeviceId());
         if (Boolean.TRUE.equals(filterDuplicate) && last != null && position.getFixTime().equals(last.getFixTime())) {
             for (String key : position.getAttributes().keySet()) {

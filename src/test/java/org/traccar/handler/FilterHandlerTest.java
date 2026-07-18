@@ -143,4 +143,32 @@ public class FilterHandlerTest extends BaseTest {
 
     }
 
+    @Test
+    public void testDuplicateNeverFiltersCountingEvents() {
+
+        // filter.duplicate solo compara PRESENCIA de la clave, no su valor: dos eventos de
+        // conteo distintos con el mismo fixTime y la misma clave "passengersOn" (valores
+        // distintos) se filtraban como si fueran iguales. Los eventos de conteo deben pasar
+        // siempre, sin importar el estado de filter.duplicate.
+        var device = mock(Device.class);
+        when(device.getAttributes()).thenReturn(new HashMap<>());
+        var config = mock(Config.class);
+        when(config.getString(Keys.FILTER_DUPLICATE.getKey())).thenReturn("true");
+        var cacheManager = mock(CacheManager.class);
+        when(cacheManager.getConfig()).thenReturn(config);
+        when(cacheManager.getObject(any(), anyLong())).thenReturn(device);
+
+        Date time = new Date();
+        Position last = createPosition(time, true, 0);
+        last.set("passengersOn", 5);
+        when(cacheManager.getPosition(anyLong())).thenReturn(last);
+
+        var handler = new FilterHandler(cacheManager, null, null);
+
+        Position event = createPosition(time, true, 0);
+        event.set("passengersOn", 8);
+
+        assertFalse(handler.filter(event));
+    }
+
 }
