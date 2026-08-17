@@ -39,6 +39,12 @@ public class FilterHandler extends BasePositionHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FilterHandler.class);
 
+    /** Tolerancia de coordenadas (~1m) para considerar dos posiciones "el mismo punto". */
+    private static final double COORDINATE_EPSILON = 0.00001;
+
+    /** Atributos de valor de negocio: si difieren, dos posiciones NUNCA se consideran duplicadas. */
+    private static final String[] BUSINESS_ATTRIBUTES = {"passengersOn", "passengersOff"};
+
     private final CacheManager cacheManager;
     private final StatisticsManager statisticsManager;
     private final Storage storage;
@@ -62,42 +68,86 @@ public class FilterHandler extends BasePositionHandler {
         return Boolean.TRUE.equals(filterZero) && position.getLatitude() == 0.0 && position.getLongitude() == 0.0;
     }
 
-    private boolean filterDuplicate(Position position, Position last) {
-        // Los eventos de conteo (passengersOn/Off) NUNCA se filtran por este mecanismo: la
-        // posición previa puede tener la misma clave de atributo con un valor distinto (otro
-        // evento de conteo), y este filtro solo compara presencia de clave, no valor.
-        if (position.hasAttribute("passengersOn") || position.hasAttribute("passengersOff")) {
+    /**
+     * Compara el VALOR de un atributo (no solo su presencia) entre dos posiciones, normalizando
+     * números para que Integer/Long/Double con el mismo valor comparen igual (evita falsos
+     * negativos por el tipo numérico que reconstruye el deserializador JSON del storage).
+     */
+    private boolean attributeEquals(Position a, Position b, String key) {
+        Object va = a.getAttributes().get(key);
+        Object vb = b.getAttributes().get(key);
+        if (va == null || vb == null) {
+            return va == vb;
+        }
+        if (va instanceof Number && vb instanceof Number) {
+            return ((Number) va).doubleValue() == ((Number) vb).doubleValue();
+        }
+        return va.equals(vb);
+    }
+
+    /**
+     * Determina si dos posiciones son el MISMO evento físico: mismo punto GPS y mismo valor en
+     * cada atributo de negocio (conteo de pasajeros). El fixTime se asume ya igual (garantizado
+     * por quien llama). Esta es la única condición para tratar algo como "duplicado exacto" —
+     * cualquier diferencia, por mínima que sea, significa que es un evento real distinto.
+     */
+    private boolean isSameEvent(Position a, Position b) {
+        if (Math.abs(a.getLatitude() - b.getLatitude()) > COORDINATE_EPSILON
+                || Math.abs(a.getLongitude() - b.getLongitude()) > COORDINATE_EPSILON) {
             return false;
         }
+        for (String key : BUSINESS_ATTRIBUTES) {
+            if (!attributeEquals(a, b, key)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Duplicado inmediato: misma posición cacheada en memoria con el mismo fixTime. Chequeo
+     * rápido (sin BD) para el caso común de reenvío en vivo de la última posición.
+     */
+    private boolean filterDuplicate(Position position, Position last) {
         Boolean filterDuplicate = AttributeUtil.lookup(cacheManager, Keys.FILTER_DUPLICATE, position.getDeviceId());
         if (Boolean.TRUE.equals(filterDuplicate) && last != null && position.getFixTime().equals(last.getFixTime())) {
-            for (String key : position.getAttributes().keySet()) {
-                if (!last.hasAttribute(key)) {
-                    return false;
-                }
-            }
-            return true;
+            return isSameEvent(position, last);
         }
         return false;
     }
 
+    /**
+     * Retransmisión/histórico: la posición llega con fixTime igual o anterior a la última
+     * conocida. Filosofía: NUNCA se pierde un evento real, sin importar que sea un reenvío.
+     *
+     *  - Si no hay ninguna posición guardada con ese (deviceId, fixTime): es histórico legítimo
+     *    (p.ej. buffer tras pérdida de señal) → se guarda normal, sin marcar nada.
+     *  - Si hay una guardada y es EXACTAMENTE el mismo evento (mismo GPS, mismo conteo): es un
+     *    reenvío puro del mismo dato (bucle de retransmisión) → se descarta, no aporta nada nuevo.
+     *  - Si hay una guardada pero el contenido difiere en algo (otro GPS, otro conteo): es un
+     *    evento real distinto que casualmente comparte fixTime → se guarda igual, marcado con el
+     *    atributo "retransmitted" para trazabilidad, NUNCA se descarta.
+     */
     private boolean filterDuplicateStored(Position position, Position last) {
         Boolean filterDuplicateStored = AttributeUtil.lookup(
                 cacheManager, Keys.FILTER_DUPLICATE_STORED, position.getDeviceId());
         if (Boolean.TRUE.equals(filterDuplicateStored)
                 && last != null && !position.getFixTime().after(last.getFixTime())) {
-            // Los eventos de conteo (passengersOn/Off) NUNCA se filtran por este mecanismo:
-            // llevan carga única aunque compartan fixTime con una posición GPS ya guardada.
-            // El filtro solo evita el reenvío de posiciones GPS puras (bucle de retransmisión).
-            if (position.hasAttribute("passengersOn") || position.hasAttribute("passengersOff")) {
-                return false;
-            }
             try {
-                return !storage.getObjects(Position.class, new Request(
-                        new Columns.Include("id"),
+                List<Position> existing = storage.getObjects(Position.class, new Request(
+                        new Columns.All(),
                         new Condition.And(
                                 new Condition.Equals("deviceId", position.getDeviceId()),
-                                new Condition.Equals("fixTime", position.getFixTime())))).isEmpty();
+                                new Condition.Equals("fixTime", position.getFixTime()))));
+                if (existing.isEmpty()) {
+                    return false;
+                }
+                boolean exactDuplicate = existing.stream().anyMatch(stored -> isSameEvent(position, stored));
+                if (exactDuplicate) {
+                    return true;
+                }
+                position.set("retransmitted", true);
+                return false;
             } catch (StorageException e) {
                 LOGGER.warn("DuplicateStored check failed: {}", e.getMessage());
             }
@@ -264,6 +314,10 @@ public class FilterHandler extends BasePositionHandler {
             LOGGER.info("Position filtered by {} filters from device: {}",
                     String.join(" ", filterTypes), device.getUniqueId());
             return true;
+        }
+
+        if (Boolean.TRUE.equals(position.getAttributes().get("retransmitted"))) {
+            LOGGER.info("Position marked as retransmitted (stored anyway) from device: {}", device.getUniqueId());
         }
 
         return false;

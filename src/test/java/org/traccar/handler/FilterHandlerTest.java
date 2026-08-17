@@ -121,35 +121,69 @@ public class FilterHandlerTest extends BaseTest {
 
         Position resend = createPosition(new Date(1000000), true, 10);
 
-        // ya existe en BD → se filtra
-        when(storage.getObjects(any(), any())).thenReturn(List.of(new Position()));
+        // ya existe en BD una posicion IDENTICA (mismo GPS, sin conteo) → duplicado real, se filtra
+        Position identicalStored = createPosition(new Date(1000000), true, 10);
+        when(storage.getObjects(any(), any())).thenReturn(List.of(identicalStored));
         assertTrue(handler.filter(resend));
 
-        // no existe en BD (dato historico legitimo) → pasa
+        // existe en BD pero con OTRO gps (evento real distinto, no un reenvio) → NUNCA se filtra
+        Position differentStored = createPosition(new Date(1000000), true, 10);
+        differentStored.setLatitude(20);
+        when(storage.getObjects(any(), any())).thenReturn(List.of(differentStored));
+        Position differentResend = createPosition(new Date(1000000), true, 10);
+        assertFalse(handler.filter(differentResend));
+        assertTrue(Boolean.TRUE.equals(differentResend.getAttributes().get("retransmitted")));
+
+        // no existe en BD (dato historico legitimo) → pasa, sin marcar nada
         when(storage.getObjects(any(), any())).thenReturn(List.of());
-        assertFalse(handler.filter(resend));
+        Position freshHistorical = createPosition(new Date(1000000), true, 10);
+        assertFalse(handler.filter(freshHistorical));
+        assertFalse(freshHistorical.hasAttribute("retransmitted"));
 
         // posicion en vivo (mas nueva que la ultima) → pasa sin consultar BD
         Position live = createPosition(new Date(3000000), true, 10);
         assertFalse(handler.filter(live));
 
-        // un evento de conteo (passengersOn/Off) NUNCA se filtra por duplicateStored,
-        // aunque el storage devolviera una coincidencia por fixTime
-        Position countingEvent = createPosition(new Date(1000000), true, 0);
-        countingEvent.set("passengersOn", 5);
-        countingEvent.set("passengersOff", 2);
-        when(storage.getObjects(any(), any())).thenReturn(List.of(new Position()));
-        assertFalse(handler.filter(countingEvent));
+    }
+
+    @Test
+    public void testDuplicateStoredNeverDropsDifferentCountingEvent() throws Exception {
+
+        // el caso que causo perdida real de datos en produccion: dos eventos de conteo
+        // distintos (passengersOn con VALORES distintos) comparten fixTime con una posicion
+        // ya guardada. Deben guardarse ambos, nunca descartarse por "duplicateStored".
+        var device = mock(Device.class);
+        when(device.getAttributes()).thenReturn(new HashMap<>());
+        var config = mock(Config.class);
+        when(config.getString(Keys.FILTER_DUPLICATE_STORED.getKey())).thenReturn("true");
+        var cacheManager = mock(CacheManager.class);
+        when(cacheManager.getConfig()).thenReturn(config);
+        when(cacheManager.getObject(any(), anyLong())).thenReturn(device);
+
+        Position last = createPosition(new Date(2000000), true, 0);
+        when(cacheManager.getPosition(anyLong())).thenReturn(last);
+
+        Position stored = createPosition(new Date(1000000), true, 0);
+        stored.set("passengersOn", 5);
+
+        var storage = mock(Storage.class);
+        when(storage.getObjects(any(), any())).thenReturn(List.of(stored));
+        var handler = new FilterHandler(cacheManager, null, storage);
+
+        Position newEvent = createPosition(new Date(1000000), true, 0);
+        newEvent.set("passengersOn", 8);
+
+        assertFalse(handler.filter(newEvent));
+        assertTrue(Boolean.TRUE.equals(newEvent.getAttributes().get("retransmitted")));
 
     }
 
     @Test
-    public void testDuplicateNeverFiltersCountingEvents() {
+    public void testDuplicateNeverFiltersDifferentCountingEvents() {
 
-        // filter.duplicate solo compara PRESENCIA de la clave, no su valor: dos eventos de
-        // conteo distintos con el mismo fixTime y la misma clave "passengersOn" (valores
-        // distintos) se filtraban como si fueran iguales. Los eventos de conteo deben pasar
-        // siempre, sin importar el estado de filter.duplicate.
+        // filter.duplicate (chequeo rapido en memoria) ahora compara VALOR real, no solo
+        // presencia de la clave: dos eventos de conteo distintos con el mismo fixTime y la
+        // misma clave "passengersOn" (valores distintos) nunca deben tratarse como iguales.
         var device = mock(Device.class);
         when(device.getAttributes()).thenReturn(new HashMap<>());
         var config = mock(Config.class);
