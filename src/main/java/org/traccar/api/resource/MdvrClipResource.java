@@ -15,6 +15,7 @@
  */
 package org.traccar.api.resource;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.ByteBuf;
 import jakarta.inject.Inject;
@@ -33,6 +34,7 @@ import org.traccar.database.CommandsManager;
 import org.traccar.media.VideoClipManager;
 import org.traccar.model.Command;
 import org.traccar.model.Device;
+import org.traccar.protocol.N9mProtocol;
 import org.traccar.storage.query.Columns;
 import org.traccar.storage.query.Condition;
 import org.traccar.storage.query.Request;
@@ -54,10 +56,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * GET /api/mdvrclip?deviceId=1&channel=1&from=ISO&to=ISO&plate=ABC123&door=cam
@@ -93,6 +98,9 @@ public class MdvrClipResource extends BaseResource {
     @Inject
     private CommandsManager commandsManager;
 
+    @Inject
+    private N9mProtocol n9mProtocol;
+
     private static final DateTimeFormatter LOCAL_FMT =
             DateTimeFormatter.ofPattern("yy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter FILENAME_FMT =
@@ -109,7 +117,8 @@ public class MdvrClipResource extends BaseResource {
             @QueryParam("to") String toIso,
             @QueryParam("plate") @DefaultValue("") String plate,
             @QueryParam("door") @DefaultValue("cam") String door,
-            @QueryParam("ip") @DefaultValue("") String ipOverride) throws Exception {
+            @QueryParam("ip") @DefaultValue("") String ipOverride,
+            @QueryParam("maxSeconds") @DefaultValue("60") long maxSeconds) throws Exception {
 
         LOGGER.info("MDVR CLIP deviceId={} ch={} from={} to={} plate={} door={} ip={}",
                 deviceId, channel, fromIso, toIso, plate, door,
@@ -125,7 +134,9 @@ public class MdvrClipResource extends BaseResource {
         Device device = storage.getObject(Device.class, new Request(
                 new Columns.All(), new Condition.Equals("id", deviceId)));
 
-        boolean useJt1078 = "jt1078".equalsIgnoreCase(device != null ? device.getString("mdvrMode", "") : "");
+        String mdvrMode = device != null ? device.getString("mdvrMode", "") : "";
+        boolean useJt1078 = "jt1078".equalsIgnoreCase(mdvrMode);
+        boolean useN9m = "n9m".equalsIgnoreCase(mdvrMode);
 
         String mdvrIp = (!ipOverride.isBlank())
                 ? ipOverride
@@ -144,7 +155,8 @@ public class MdvrClipResource extends BaseResource {
 
         Instant fromInstant = Instant.parse(fromIso);
         Instant toInstant   = Instant.parse(toIso);
-        long clipSeconds    = Math.min(60, Math.max(1, Duration.between(fromInstant, toInstant).getSeconds()));
+        long clipSeconds    = Math.min(
+                Math.max(1, maxSeconds), Math.max(1, Duration.between(fromInstant, toInstant).getSeconds()));
 
         DateTimeFormatter localFmt = LOCAL_FMT.withZone(mdvrZone);
         String mdvrFrom = localFmt.format(fromInstant).replace(" ", "%20");
@@ -154,6 +166,11 @@ public class MdvrClipResource extends BaseResource {
         if (useJt1078) {
             LOGGER.info("MDVR mdvrMode=jt1078 — using JT1078 path for deviceId={}", deviceId);
             return downloadViaJt1078(deviceId, channel, fromInstant, toInstant, clipSeconds, plate, door, mdvrZone);
+        }
+
+        if (useN9m) {
+            LOGGER.info("MDVR mdvrMode=n9m — using N9M path for deviceId={}", deviceId);
+            return downloadViaN9m(deviceId, channel, fromInstant, toInstant, clipSeconds, plate, door, mdvrZone);
         }
 
         String baseUrl = "http://" + mdvrIp;
@@ -623,6 +640,220 @@ public class MdvrClipResource extends BaseResource {
             int exit = ffmpeg.waitFor();
             pipeThread.join(5000);
             LOGGER.info("JT1078 CLIP ffmpeg exit={} fileSize={}", exit, Files.size(tmpFile));
+
+            byte[] mp4 = Files.readAllBytes(tmpFile);
+
+            String safePlate = plate.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
+            String safeDoor  = door.replaceAll("[^A-Za-z0-9]", "");
+            String dateStr   = FILENAME_FMT.withZone(zone).format(from);
+            String filename  = (safePlate.isEmpty() ? "mdvr" : safePlate)
+                    + "_" + safeDoor + "_" + dateStr + ".mp4";
+
+            return Response.ok(mp4)
+                    .type("video/mp4")
+                    .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                    .build();
+        } finally {
+            Files.deleteIfExists(tmpFile);
+        }
+    }
+
+    // ── N9M path (Streamax MDVR JSON control protocol, device behind NAT / SIM card) ────────
+
+    private static final DateTimeFormatter N9M_QUERY_FMT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+
+    /**
+     * Looks up the real recording segment (via STORM/QUERYFILELIST) that overlaps [from, to], for the
+     * full day containing {@code from}. Queries all channels (bitmask sentinel) rather than filtering
+     * by channel in the request — RECORDCHANNEL's exact numbering relative to our door/channel
+     * convention isn't confirmed, so filtering client-side by time overlap only (taking the first
+     * match) is the safer bet; single-camera-per-door usage makes collisions unlikely in practice.
+     */
+    private Instant[] findRealSegment(long deviceId, Instant from, Instant to, ZoneId zone) {
+        ZonedDateTime dayStart = from.atZone(zone).toLocalDate().atStartOfDay(zone);
+        ZonedDateTime dayEnd = dayStart.plusDays(1).minusSeconds(1);
+        String startStr = N9M_QUERY_FMT.format(dayStart);
+        String endStr = N9M_QUERY_FMT.format(dayEnd);
+
+        // Channel bitmask 15 (channels 1-4) is the exact value from the one confirmed-working real
+        // QUERYFILELIST capture (12 real files returned) — 63 and the 0x7FFFFFFF "all channels"
+        // sentinel (works for GETCALENDAR) both returned SENDFILECOUNT:0 here when tried live.
+        JsonNode response;
+        try {
+            response = n9mProtocol.queryFileList(deviceId, 15, startStr, endStr)
+                    .get(15, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            LOGGER.warn("N9M QUERYFILELIST failed deviceId={} day={}", deviceId, startStr, e);
+            return null;
+        }
+
+        if (response.path("ERRORCODE").asInt(-1) != 0 || !response.has("RECORD")) {
+            LOGGER.warn("N9M QUERYFILELIST no usable records deviceId={} response={}", deviceId, response);
+            return null;
+        }
+
+        for (JsonNode recordNode : response.path("RECORD")) {
+            String record = recordNode.asText("");
+            String[] parts = record.split("-");
+            if (parts.length != 2) {
+                continue;
+            }
+            try {
+                Instant segStart = LocalDateTime.parse(parts[0], N9M_QUERY_FMT).atZone(zone).toInstant();
+                Instant segEnd = LocalDateTime.parse(parts[1], N9M_QUERY_FMT).atZone(zone).toInstant();
+                if (!segEnd.isBefore(from) && !segStart.isAfter(to)) {
+                    LOGGER.info("N9M QUERYFILELIST match deviceId={} record={} eventFrom={} eventTo={}",
+                            deviceId, record, from, to);
+                    return new Instant[]{segStart, segEnd};
+                }
+            } catch (Exception e) {
+                LOGGER.warn("N9M QUERYFILELIST bad record format deviceId={} record={}", deviceId, record);
+            }
+        }
+        LOGGER.warn("N9M QUERYFILELIST no segment overlaps eventFrom={} eventTo={} deviceId={}", from, to, deviceId);
+        return null;
+    }
+
+    /**
+     * Downloads historical video by sending an N9M REQUESTREMOTEPLAYBACK command over the device's
+     * active N9M control connection. The device streams the video back to our N9M media server
+     * (device-initiated, NAT-friendly — same reasoning as the JT1078 path). Waits synchronously for
+     * the clip, then converts MPEG-TS → MP4 via ffmpeg. Structurally identical to
+     * {@link #downloadViaJt1078}: routing to N9M instead of JT808/JT1078 happens transparently via
+     * {@code CommandSenderManager} (see {@code org.traccar.command.N9mCommandSender}), so the same
+     * generic {@code Command.TYPE_VIDEO_DOWNLOAD} is sent unchanged here.
+     *
+     * IMPORTANT (confirmed live 2026-08-17/18): the START time must fall inside a real recorded
+     * segment (REQUESTREMOTEPLAYBACK fails with ERRORCODE:26 "LACK OF RESOURCE OR TASK FULL" for a
+     * time with no recording at all) — so this still looks up the real segment via STORM/QUERYFILELIST
+     * ({@link N9mProtocol#queryFileList}) first, purely to validate coverage and clamp the window.
+     * BUT the device does NOT honor the requested END time for anything: a short window (segment
+     * start, +60s) was accepted (ERRORCODE:0) and the device kept streaming for over 15 minutes
+     * (259k+ frames) until the connection was closed manually. So we must NOT request the full
+     * segment — that just means transferring minutes of unwanted video (slow + wastes SIM data).
+     * Instead we request only the short event window (clamped inside the segment) and rely on
+     * {@link VideoClipManager}'s own duration timer plus the {@code finally} block's TYPE_VIDEO_STOP
+     * below to stop the device's stream once we have enough frames — same approach already used for
+     * JT1078.
+     */
+    private Response downloadViaN9m(long deviceId, int channel, Instant from, Instant to,
+            long durationSeconds, String plate, String door, ZoneId zone) throws Exception {
+
+        Instant[] realSegment = findRealSegment(deviceId, from, to, zone);
+        if (realSegment == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("No se encontró un segmento de grabación real que contenga ese momento. "
+                            + "Verifica que el equipo tenga video guardado para esa fecha/hora.").build();
+        }
+        Instant segmentFrom = realSegment[0];
+        Instant segmentTo = realSegment[1];
+
+        // Clamp the requested window to stay inside the real segment (the event's own from/to can
+        // start slightly before the recording actually begins), then cap it to durationSeconds.
+        Instant playbackFrom = from.isBefore(segmentFrom) ? segmentFrom : from;
+        Instant maxEnd = playbackFrom.plusSeconds(durationSeconds);
+        Instant playbackTo = maxEnd.isAfter(segmentTo) ? segmentTo : maxEnd;
+        long clipDuration = Math.max(1, Duration.between(playbackFrom, playbackTo).getSeconds());
+
+        String clipId = clipManager.createSession(deviceId, channel, clipDuration);
+        LOGGER.info("N9M CLIP deviceId={} ch={} eventFrom={} eventTo={} segment={}..{} "
+                        + "playback={}..{} clipId={}",
+                deviceId, channel, from, to, segmentFrom, segmentTo, playbackFrom, playbackTo, clipId);
+
+        Command command = new Command();
+        command.setDeviceId(deviceId);
+        command.setType(Command.TYPE_VIDEO_DOWNLOAD);
+        command.set(Command.KEY_INDEX, channel);
+        command.set(Command.KEY_START_TIME, playbackFrom.getEpochSecond());
+        command.set(Command.KEY_END_TIME, playbackTo.getEpochSecond());
+        commandsManager.sendCommand(command);
+
+        try {
+            return awaitAndBuildN9mClip(deviceId, channel, playbackFrom, clipId, clipDuration, plate, door, zone);
+        } finally {
+            // Critical: the device does NOT stop on its own when the clip is complete (see above), so
+            // skipping this would leave it streaming indefinitely — burning SIM data and leaving the
+            // device's single media task slot stuck "TASK FULL" for the next request.
+            try {
+                Command stop = new Command();
+                stop.setDeviceId(deviceId);
+                stop.setType(Command.TYPE_VIDEO_STOP);
+                commandsManager.sendCommand(stop);
+            } catch (Exception e) {
+                LOGGER.warn("N9M CLIP cleanup (TYPE_VIDEO_STOP) failed deviceId={}", deviceId, e);
+            }
+        }
+    }
+
+    private Response awaitAndBuildN9mClip(long deviceId, int channel, Instant from, String clipId,
+            long durationSeconds, String plate, String door, ZoneId zone) throws Exception {
+
+        // Wait for device to stream the clip back via the N9M media connection
+        long deadline = System.currentTimeMillis() + (durationSeconds + 30) * 1000L;
+        VideoClipManager.ClipStatus status;
+        do {
+            Thread.sleep(1000);
+            status = clipManager.getStatus(clipId);
+        } while (status != null
+                && status != VideoClipManager.ClipStatus.READY
+                && status != VideoClipManager.ClipStatus.ERROR
+                && System.currentTimeMillis() < deadline);
+
+        if (status != VideoClipManager.ClipStatus.READY) {
+            clipManager.removeSession(clipId);
+            LOGGER.warn("N9M CLIP failed deviceId={} clipId={} status={}", deviceId, clipId, status);
+            return Response.status(Response.Status.GATEWAY_TIMEOUT)
+                    .entity("El dispositivo no respondió con video. Verifica que n9m.serverHost "
+                            + "esté configurado con la IP/host correcto en traccar.xml, y que el equipo "
+                            + "tenga una conexión N9M activa (mdvrMode=n9m, n9mSerial configurado)").build();
+        }
+
+        ByteBuf buf = clipManager.getClipData(clipId);
+        if (buf == null || buf.readableBytes() == 0) {
+            clipManager.removeSession(clipId);
+            return Response.status(Response.Status.NO_CONTENT).build();
+        }
+        byte[] tsBytes = new byte[buf.readableBytes()];
+        buf.getBytes(buf.readerIndex(), tsBytes);
+        clipManager.removeSession(clipId);
+
+        // Convert MPEG-TS → MP4
+        java.nio.file.Path tmpFile = Files.createTempFile("n9m_clip_", ".mp4");
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                    "ffmpeg", "-i", "pipe:0",
+                    "-c", "copy",
+                    "-movflags", "+faststart",
+                    "-y", tmpFile.toString());
+            Process ffmpeg = pb.start();
+
+            Thread pipeThread = new Thread(() -> {
+                try (OutputStream out = ffmpeg.getOutputStream()) {
+                    out.write(tsBytes);
+                } catch (IOException e) {
+                    String msg = e.getMessage();
+                    if (msg == null || (!msg.contains("Broken pipe") && !msg.contains("Stream closed"))) {
+                        LOGGER.warn("N9M piper: {}", msg);
+                    }
+                }
+            });
+            pipeThread.setName("n9m-piper");
+            pipeThread.start();
+
+            Thread errThread = new Thread(() -> {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(ffmpeg.getErrorStream()))) {
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        LOGGER.info("ffmpeg(n9m): {}", line);
+                    }
+                } catch (IOException ignored) { }
+            });
+            errThread.setDaemon(true);
+            errThread.start();
+
+            int exit = ffmpeg.waitFor();
+            pipeThread.join(5000);
+            LOGGER.info("N9M CLIP ffmpeg exit={} fileSize={}", exit, Files.size(tmpFile));
 
             byte[] mp4 = Files.readAllBytes(tmpFile);
 

@@ -45,6 +45,8 @@ public class CommandSenderManager {
         String senderType = device.getString(Keys.COMMAND_SENDER.getKey());
         if (senderType != null) {
             return injector.getInstance(SENDERS_ALL.get(senderType));
+        } else if ("n9m".equalsIgnoreCase(device.getString("mdvrMode"))) {
+            return injector.getInstance(N9mCommandSender.class);
         } else if (device.hasAttribute("notificationTokens")) {
             if (config.hasKey(Keys.COMMAND_CLIENT_SERVICE_ACCOUNT)) {
                 return injector.getInstance(FirebaseCommandSender.class);

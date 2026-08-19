@@ -31,6 +31,8 @@ import org.traccar.helper.BufferUtil;
 import org.traccar.helper.NetworkUtil;
 import org.traccar.model.LogRecord;
 import org.traccar.protocol.Jt1078Protocol;
+import org.traccar.protocol.N9mMediaProtocol;
+import org.traccar.protocol.N9mProtocol;
 import org.traccar.session.ConnectionManager;
 
 import java.nio.charset.StandardCharsets;
@@ -46,11 +48,19 @@ public class StandardLoggingHandler extends ChannelDuplexHandler {
     private boolean decodeTextData;
     private int logCount;
 
+    // N9M's media channel is exactly the same shape of problem JT1078 already has here (continuous
+    // binary video/audio, one packet per log line, no natural quiet period) — without this it floods
+    // production logs indefinitely instead of just the first 50 packets. The control channel is added
+    // too: its periodic non-JSON "ping" frames and the (large) CONFIGMODEL channel-config response add
+    // up over a long-lived connection even though no single message is huge.
+    private static final Set<String> THROTTLED_PROTOCOLS = Set.of(
+            BaseProtocol.nameFromClass(Jt1078Protocol.class),
+            BaseProtocol.nameFromClass(N9mProtocol.class),
+            BaseProtocol.nameFromClass(N9mMediaProtocol.class));
+
     public StandardLoggingHandler(String protocol) {
         this.protocol = protocol;
-        this.logLimit = Set.of(
-                BaseProtocol.nameFromClass(Jt1078Protocol.class))
-                .contains(protocol) ? 50 : 0;
+        this.logLimit = THROTTLED_PROTOCOLS.contains(protocol) ? 50 : 0;
     }
 
     @Inject

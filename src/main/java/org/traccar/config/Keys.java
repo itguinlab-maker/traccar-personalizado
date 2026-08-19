@@ -2090,6 +2090,15 @@ public final class Keys {
             List.of(KeyType.CONFIG));
 
     /**
+     * Public hostname or IP sent to N9M devices (Streamax MDVR) in REQUESTALIVEVIDEO/REQUESTREMOTEPLAYBACK
+     * commands, so they know where to open the media (video) connection back to. When not set, the host is
+     * extracted from web.url.
+     */
+    public static final ConfigKey<String> N9M_SERVER_HOST = new StringConfigKey(
+            "n9m.serverHost",
+            List.of(KeyType.CONFIG));
+
+    /**
      * Habilita el consumo del gateway ISUP (estado online de cámaras Hikvision por ISUP).
      */
     public static final ConfigKey<Boolean> ISUP_ENABLE = new BooleanConfigKey(
