@@ -2099,6 +2099,16 @@ public final class Keys {
             List.of(KeyType.CONFIG));
 
     /**
+     * Overrides the port number sent to N9M devices alongside {@link #N9M_SERVER_HOST} for the media
+     * (video) connection, when it differs from the port {@code N9mMediaProtocol} actually binds to
+     * locally (n9mmedia.port) — e.g. behind a TCP tunnel/NAT that maps a different external port to the
+     * local one. When not set, falls back to n9mmedia.port (same value used for the local bind).
+     */
+    public static final ConfigKey<Integer> N9M_MEDIA_PUBLIC_PORT = new IntegerConfigKey(
+            "n9m.mediaPublicPort",
+            List.of(KeyType.CONFIG));
+
+    /**
      * Habilita el consumo del gateway ISUP (estado online de cámaras Hikvision por ISUP).
      */
     public static final ConfigKey<Boolean> ISUP_ENABLE = new BooleanConfigKey(

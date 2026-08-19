@@ -105,7 +105,11 @@ public class N9mProtocolEncoder extends BaseProtocolEncoder {
     }
 
     private int getMediaPort() {
-        return getCacheManager().getConfig().getInteger(
+        var config = getCacheManager().getConfig();
+        if (config.hasKey(Keys.N9M_MEDIA_PUBLIC_PORT)) {
+            return config.getInteger(Keys.N9M_MEDIA_PUBLIC_PORT);
+        }
+        return config.getInteger(
                 Keys.PROTOCOL_PORT.withPrefix(BaseProtocol.nameFromClass(N9mMediaProtocol.class)));
     }
 
