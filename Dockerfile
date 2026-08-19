@@ -15,6 +15,7 @@ WORKDIR /opt/traccar
 COPY target/tracker-server.jar .
 COPY target/lib ./lib
 COPY debug.xml .
+COPY jt808-keystore.p12 .
 COPY schema ./schema
 COPY templates ./templates
 
@@ -29,5 +30,5 @@ COPY --from=frontend-builder /src/traccar-web/build ./web
 COPY deploy-traccar/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-EXPOSE 8082 21081 21081/udp 8400
+EXPOSE 8082 6556 6556/udp 8400
 ENTRYPOINT ["/docker-entrypoint.sh"]

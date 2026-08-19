@@ -24,12 +24,17 @@
     <entry key='atrack.custom'>true</entry>
     <entry key='intellitrac.port'>6037</entry>
 
-    <entry key='jt808.port'>21081</entry>
-    <entry key='jt808.udp.port'>21081</entry>
+    <entry key='jt808.port'>6556</entry>
+    <entry key='jt808.udp.port'>6556</entry>
+    <entry key='jt808.ssl'>true</entry>
     <entry key='jt808.timezone'>America/Bogota</entry>
 
     <entry key='web.url'>http://192.168.1.8:8082</entry>
     <entry key='jt1078.port'>8400</entry>
+
+    <entry key='n9m.port'>21083</entry>
+    <entry key='n9mmedia.port'>21720</entry>
+    <entry key='n9m.serverHost'>192.168.1.18</entry>
 
 
 </properties>

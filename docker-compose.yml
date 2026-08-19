@@ -8,13 +8,20 @@ services:
     restart: unless-stopped
     ports:
       - "8082:8082"
-      - "21081:21081"
-      - "21081:21081/udp"
+      - "6556:6556"
+      - "6556:6556/udp"
       - "8400:8400"
       - "5263:5263"
+      - "21083:21083"
+      - "21720:21720"
     env_file:
       - path: .env
         required: false
+    environment:
+      JAVA_TOOL_OPTIONS: >-
+        -Djavax.net.ssl.keyStore=/opt/traccar/jt808-keystore.p12
+        -Djavax.net.ssl.keyStorePassword=traccar123
+        -Djavax.net.ssl.keyStoreType=PKCS12
     volumes:
       - traccar_data:/opt/traccar/data
     networks:

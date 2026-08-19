@@ -66,6 +66,7 @@ public abstract class TrackerServer implements TrackerConnector {
                 try {
                     if (isSecure()) {
                         SSLEngine engine = SSLContext.getDefault().createSSLEngine();
+                        engine.setUseClientMode(false);
                         pipeline.addLast(new SslHandler(engine));
                     }
                 } catch (Exception e) {
