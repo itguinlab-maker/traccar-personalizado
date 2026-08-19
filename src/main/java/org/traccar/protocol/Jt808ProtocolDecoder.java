@@ -629,6 +629,22 @@ public class Jt808ProtocolDecoder extends BaseProtocolDecoder {
      * en decodeLocation(): está casi siempre congelado y no aporta al conteo.
      */
     private Position decodeStreamaxCounting(DeviceSession deviceSession, ByteBuf buf, int type) {
+        // Evita conteo duplicado: en equipos con mdvrMode=n9m, N9M ya es la fuente de conteo
+        // (UPPSTATISTICS, con el GPS exacto del instante del evento — ver N9mProtocolDecoder). Si
+        // el equipo también manda 0x0B02/0x0B19 por JT808 (ambos canales pueden estar conectados a
+        // la vez, ej. JT808 para GPS continuo + ignición), publicar el conteo por acá también
+        // duplicaría cada evento real en los reportes. El ACK (sendGeneralResponse) ya se mandó en
+        // el llamador antes de esto, así que el equipo no nota la diferencia — solo no se guarda
+        // una Position para este mensaje.
+        if (getCacheManager() != null) {
+            Device device = getCacheManager().getObject(Device.class, deviceSession.getDeviceId());
+            if (device != null && "n9m".equalsIgnoreCase(device.getString("mdvrMode"))) {
+                LOGGER.debug("APC [0x{}] omitido: mdvrMode=n9m ya es la fuente de conteo para este equipo",
+                        Integer.toHexString(type));
+                return null;
+            }
+        }
+
         Position position = new Position(getProtocolName());
         position.setDeviceId(deviceSession.getDeviceId());
 
