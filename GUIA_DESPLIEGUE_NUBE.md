@@ -6,6 +6,36 @@ Cómo poner el servidor CountinG&KLAB a correr en una VM en la nube, desde cero,
 
 ---
 
+## Requisitos previos
+
+**En tu máquina de desarrollo:**
+
+| Herramienta | Versión mínima | Para qué |
+|---|---|---|
+| JDK | 17+ (probado con 21) | Compilar el backend (`gradlew assemble`) |
+| Docker | cualquiera reciente | Construir y probar la imagen |
+| Git | cualquiera reciente | Clonar el repo — **con submódulos**, ver abajo |
+
+No necesitas Node.js instalado — el frontend se compila **dentro** del build de Docker (etapa `frontend-builder` del `Dockerfile`), no en tu máquina.
+
+**En la VM de la nube:** solo Docker. Nada más.
+
+### ⚠️ El repo tiene un submódulo — clónalo correctamente
+
+`traccar-web/` (el frontend) es un **submódulo git independiente**, no una carpeta normal del repo. Si clonas con un `git clone` común, esa carpeta queda **vacía** y el build de Docker falla de inmediato (no encuentra `package.json`). Clona así:
+
+```
+git clone --recurse-submodules https://github.com/itguinlab-maker/traccar-personalizado.git
+```
+
+Si ya clonaste sin ese flag (la carpeta `traccar-web/` está vacía o solo tiene un archivo `.git`):
+
+```
+git submodule update --init --recursive
+```
+
+---
+
 ## 0. Arquitectura del despliegue
 
 Dos partes:
@@ -221,9 +251,12 @@ docker compose up -d
 
 ```
 docker compose logs -f traccar_server
+docker compose ps
 ```
 
-Deberías ver el arranque sin la advertencia de `debug.xml`, y `http://<IP-PUBLICA>:8082` debe cargar la plataforma.
+Deberías ver el arranque sin la advertencia de `debug.xml`, y `http://<IP-PUBLICA>:8082` debe cargar la plataforma. `docker compose ps` debe mostrar exactamente **2 contenedores corriendo**: `traccar_server` y `traccar-postgres` — eso es todo lo que este despliegue necesita, no falta ningún tercer contenedor.
+
+> **Sobre el módulo ISUP (video Hikvision por SIM restringida)**: existe un componente adicional (`isup-gateway`) para esa función específica, pero **no forma parte de este despliegue** ni se puede agregar automáticamente — su SDK viene bajo licencia/NDA directo de Hikvision (no es software libre redistribuible) y su código vive fuera de este repositorio. Si tu operación no necesita descargar video de cámaras Hikvision sin IP pública, no lo necesitas — el conteo y el video normal de Hikvision (RTSP directo) y todo lo de Streamax funcionan sin él. Si sí lo necesitas, es un despliegue aparte que requiere gestionar la licencia del SDK con Hikvision directamente; ver [GUIA_CAMARAS_HIKVISION_STREAMAX.md](GUIA_CAMARAS_HIKVISION_STREAMAX.md) sección 1.5.
 
 ---
 

@@ -34,6 +34,7 @@ La separación está respaldada por **dos capas**:
 |---|---|---|
 | **SuperAdmin** | *(user.administrator = true)* | Acceso total a toda la plataforma y todas las empresas |
 | **Admin de Empresa** | `admin_empresa` | Gestiona vehículos, datos y usuarios de su empresa |
+| **Supervisor Global** | `supervisor_global` | Ve vehículos y dispositivos de **todas** las empresas, sin restricción — pero de solo lectura (403 en POST/PUT/DELETE de vehículos). Se crea sin atributo `company`. |
 | **Supervisor** | `supervisor` | Ve vehículos y reportes de su empresa, sin editar |
 | **Propietario** | `propietario` | Ve solo los dispositivos asignados explícitamente a él |
 | **Auditor** | `auditor` | Solo reportes, sin mapa ni configuración |
@@ -44,17 +45,17 @@ La separación está respaldada por **dos capas**:
 
 ### 3.1 Menú Configuración
 
-| Ítem | SuperAdmin | Admin Empresa | Supervisor | Propietario | Auditor |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Preferencias | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Mi usuario | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dispositivos | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **Vehículos** | ✅ | ✅ | 👁️ solo ver | ❌ | ❌ |
-| Geocercas | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Grupos** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Conductores, Calendarios… | ✅ | ✅ | ✅ | ❌ | ❌ |
-| Usuarios (gestión) | ✅ | ✅* | ❌ | ❌ | ❌ |
-| Configuración del servidor | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Ítem | SuperAdmin | Admin Empresa | Supervisor Global | Supervisor | Propietario | Auditor |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Preferencias | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Mi usuario | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dispositivos | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Vehículos** | ✅ | ✅ | 👁️ solo ver (todas las empresas) | 👁️ solo ver | ❌ | ❌ |
+| Geocercas | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Grupos** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Conductores, Calendarios… | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| Usuarios (gestión) | ✅ | ✅* | ❌ | ❌ | ❌ | ❌ |
+| Configuración del servidor | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 *\* Admin de Empresa puede gestionar usuarios que él mismo creó (si tiene `userLimit > 0`).*
 

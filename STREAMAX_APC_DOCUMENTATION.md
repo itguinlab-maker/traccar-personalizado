@@ -1,5 +1,7 @@
 # Documentación Técnica: Integración Streamax APC + Hikvision en Traccar
 
+> ⚠️ **Documento técnico a nivel de protocolo/backend, escrito antes de agregar el protocolo N9M.** Todo lo de esta página sobre JT808/APC sigue siendo correcto y vigente (el conteo por JT808 no cambió), pero **no menciona N9M** — hoy el MDVR también puede mandar conteo y video por ese segundo protocolo en paralelo. Si estás **instalando o configurando** un equipo, usa [GUIA_INTEGRACION_MDVR.md](GUIA_INTEGRACION_MDVR.md) en su lugar — este documento es para quien vaya a leer/modificar el código del decoder.
+
 Este documento describe la ingeniería inversa, implementación y personalización del sistema de conteo de pasajeros para dispositivos Streamax MDVR (JT808/APC) y cámaras Hikvision integrados en Traccar.
 
 ---
@@ -151,6 +153,8 @@ Cuando el MDVR está en red móvil sin IP pública:
 ```
 Dispositivo Traccar → Atributos → mdvrMode = jt1078
 ```
+
+> Este es el modo JT1078 puro (sin N9M). El modo recomendado hoy para un MDVR con ambos protocolos activos es `mdvrMode = n9m` — ver [GUIA_INTEGRACION_MDVR.md](GUIA_INTEGRACION_MDVR.md).
 
 ### 3.4 Hikvision (`HikvisionEventResource.java`)
 

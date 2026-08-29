@@ -1,5 +1,7 @@
 # Guía de Despliegue Local — Docker
 
+> ⚠️ **Desactualizada**: describe el puerto JT808 21081 (hoy es 6556 con TLS) y no incluye N9M. Para el flujo actual (`Dockerfile`/`docker-compose.yml` de la raíz del repo, con TLS y N9M), usa [GUIA_DESPLIEGUE_NUBE.md](../GUIA_DESPLIEGUE_NUBE.md).
+
 ## Requisitos previos
 
 | Herramienta | Versión mínima | Verificar |

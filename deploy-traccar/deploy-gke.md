@@ -1,5 +1,7 @@
 # Guía de Despliegue en Producción — GKE (Google Kubernetes Engine)
 
+> ⚠️ **Desactualizada**: describe el puerto JT808 21081 (hoy es 6556 con TLS) y no incluye N9M en absoluto. Para el despliegue actual (Docker Compose en una VM), usa [GUIA_DESPLIEGUE_NUBE.md](../GUIA_DESPLIEGUE_NUBE.md) en la raíz del repo. Esta guía queda como referencia solo si específicamente necesitas Kubernetes/GKE — habría que actualizar sus manifiestos con TLS/N9M antes de usarla en un despliegue nuevo.
+
 ## Requisitos previos
 
 | Herramienta | Instalación |

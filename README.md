@@ -1,6 +1,23 @@
 # Traccar Personalizado
 
-> Fork de [Traccar](https://www.traccar.org) v6.13.3 con extensiones para flotas de transporte público con dispositivos **Streamax MDVR** (protocolo JT808 + APC) y cámaras **Hikvision**.
+> Fork de [Traccar](https://www.traccar.org) v6.13.3 con extensiones para flotas de transporte público con dispositivos **Streamax MDVR** (protocolos N9M + JT808, conteo de pasajeros + video) y cámaras **Hikvision**.
+
+---
+
+## 📚 Documentación — empieza aquí
+
+Guías operativas, en el orden en que normalmente se necesitan al instalar/configurar una flota nueva:
+
+| # | Documento | Para qué sirve |
+|---|---|---|
+| 1 | [GUIA_DESPLIEGUE_NUBE.md](GUIA_DESPLIEGUE_NUBE.md) | Levantar el servidor desde cero en una VM en la nube — todas las dependencias, todos los contenedores Docker |
+| 2 | [GUIA_INTEGRACION_MDVR.md](GUIA_INTEGRACION_MDVR.md) | Conectar un MDVR Streamax al servidor (protocolos N9M + JT808) y darlo de alta en la plataforma |
+| 3 | [GUIA_CAMARAS_HIKVISION_STREAMAX.md](GUIA_CAMARAS_HIKVISION_STREAMAX.md) | Configurar cámaras Hikvision y los canales del MDVR para que manden conteo y video a la plataforma |
+| 4 | [MANUAL_USUARIO.md](MANUAL_USUARIO.md) | Uso de la plataforma: empresas/roles, alta de vehículos, referencia de atributos de dispositivo, páginas principales |
+| 5 | [USER_MANAGEMENT.md](USER_MANAGEMENT.md) | Detalle fino de permisos por rol (qué ve/edita cada uno, menú por menú) |
+| 6 | [STREAMAX_APC_DOCUMENTATION.md](STREAMAX_APC_DOCUMENTATION.md) | Referencia técnica a nivel de protocolo/backend del conteo APC — para quien vaya a tocar el código, no para instalar |
+
+Todo lo demás en este README es un resumen general del proyecto; para instalar o configurar algo puntual, usa la tabla de arriba.
 
 ---
 
@@ -22,8 +39,12 @@
 | `streamax.raw` | Payload crudo del evento (clave de deduplicación) |
 
 - Propagación automática entre posiciones consecutivas (`processing.copyAttributes`)
-- Timezone configurable por instalación (`jt808.timezone=America/Bogota`)
+- Timezone configurable por instalación (`decoder.timezone=America/Bogota` — **no** `jt808.timezone`, esa clave no tiene efecto)
 - **Deduplicación:** el MDVR retransmite el mismo evento dos veces; `streamax.raw` es la clave de deduplicación en todas las páginas de conteo
+
+### 1.1 Protocolo N9M (conteo + video, además de JT808)
+
+Además del conteo por JT808 (arriba), el fork soporta el protocolo propio N9M de Streamax para el mismo MDVR — canal separado para conteo de pasajeros (con GPS exacto del instante del evento) y video (vista en vivo + descarga histórica), corriendo en paralelo con JT808 (que sigue siendo la fuente de GPS continuo e ignición). Ver **[GUIA_INTEGRACION_MDVR.md](GUIA_INTEGRACION_MDVR.md)** para la configuración completa. Activación: atributo `mdvrMode = n9m` + `n9mSerial` en el dispositivo — con esto, la plataforma automáticamente evita contar el mismo evento dos veces por los dos canales.
 
 ### 2. Registro de Vehículos (`/api/vehiclerecords`)
 
@@ -66,12 +87,17 @@ Cuando el vehículo está en WiFi y tiene `wifiIp` configurado en el Registro de
 - Flujo: autenticación → períodos → descarga H.264 → filtro NAL Streamax → ffmpeg → MP4
 - Atributos del dispositivo: `mdvrIp` (default 192.168.1.11), `mdvrUser`, `mdvrPass`, `mdvrTimezone`
 
-#### Modo Celular / JT808 (SIM TIGO / sin IP pública)
+#### Modo Celular / JT808+JT1078 (SIM / sin IP pública)
 Cuando el vehículo está en red móvil y la SIM no es accesible desde internet:
 - Envía comando JT808 `0x9202` al dispositivo a través de la conexión TCP existente
 - El MDVR hace streaming de vuelta via JT1078 (device-initiated, NAT-friendly)
 - Requiere atributo `mdvrMode = jt1078` en el dispositivo Traccar
 - Convierte MPEG-TS → MP4 via ffmpeg `-c copy`
+
+#### Modo N9M (recomendado para MDVR con ambos protocolos activos)
+- Mismo mecanismo device-initiated, pero por el canal de control N9M en vez de JT808/JT1078
+- Requiere atributo `mdvrMode = n9m` + `n9mSerial` en el dispositivo Traccar
+- Ver [GUIA_INTEGRACION_MDVR.md](GUIA_INTEGRACION_MDVR.md) para la configuración completa (puertos, TLS de JT808, atributos)
 
 ### 5. Páginas de Reportes
 
@@ -118,6 +144,7 @@ La plataforma soporta múltiples empresas con separación total de datos. Ver gu
 |---|---|---|
 | SuperAdmin | *(administrator = true)* | Todo |
 | Admin de Empresa | `admin_empresa` | Solo su empresa — CRUD vehículos, reportes, forwarding |
+| Supervisor Global | `supervisor_global` | Todas las empresas, solo lectura |
 | Supervisor | `supervisor` | Solo lectura — vehículos y reportes de su empresa |
 | Propietario | `propietario` | Solo dispositivos explícitamente asignados |
 | Auditor | `auditor` | Solo reportes, sin editar ni mapa |
@@ -143,18 +170,21 @@ La plataforma soporta múltiples empresas con separación total de datos. Ver gu
 - Modo oscuro forzado: `bg #121212`, paper `#1E1E1E`
 - Sidebar del login con gradiente azul oscuro
 
-### 8. Infraestructura de despliegue (`deploy-traccar/`)
+### 8. Infraestructura de despliegue
 
-| Archivo | Descripción |
-|---|---|
-| `Dockerfile` | Build multietapa (Node 20 → React, JRE 21 + ffmpeg) |
-| `docker-entrypoint.sh` | Genera `traccar.xml` desde variables de entorno |
-| `docker-compose.local.yml` | Stack local (Traccar + PostgreSQL) |
-| `update-local.ps1` | Build + push GHCR + restart local |
-| `setup-local.ps1` | Primera configuración (volúmenes externos) |
-| `deploy-local.md` | Guía de despliegue Docker local |
-| `deploy-gke.md` | Guía de despliegue en GKE |
-| `k8s/` | Manifiestos Kubernetes |
+⚠️ **Hay dos rutas de despliegue en este repo, no las mezcles:**
+
+- **Actual** (recomendada, con TLS de JT808 y N9M): `Dockerfile` + `docker-compose.yml` en la **raíz** del repo. Ver **[GUIA_DESPLIEGUE_NUBE.md](GUIA_DESPLIEGUE_NUBE.md)** para el paso a paso completo.
+- **Anterior** (sin TLS, sin N9M, puerto JT808 21081 en vez de 6556), todo bajo `deploy-traccar/`:
+
+  | Archivo | Descripción |
+  |---|---|
+  | `Dockerfile` | Build multietapa más viejo, sin keystore JT808 |
+  | `docker-entrypoint.sh` | Genera `traccar.xml` desde variables de entorno (K8s) |
+  | `docker-compose.local.yml` | Stack local viejo (Traccar + PostgreSQL) |
+  | `update-local.ps1` / `setup-local.ps1` | Scripts de build/push/despliegue de la ruta vieja |
+  | `deploy-local.md` / `deploy-gke.md` | Guías de la ruta vieja — **desactualizadas**, ver GUIA_DESPLIEGUE_NUBE.md en su lugar |
+  | `k8s/` | Manifiestos Kubernetes de la ruta vieja (tampoco tienen TLS/N9M) |
 
 **Registro de imágenes:** `ghcr.io/itguinlab-maker/traccar_personalizado:latest`
 
@@ -174,40 +204,22 @@ La plataforma soporta múltiples empresas con separación total de datos. Ver gu
 
 ---
 
-## Compilar y desplegar localmente
+## Compilar y desplegar
+
+Ver **[GUIA_DESPLIEGUE_NUBE.md](GUIA_DESPLIEGUE_NUBE.md)** para el flujo completo y actual (build local → push a registro → VM en la nube), incluyendo requisitos previos, generación del keystore TLS, y creación de todos los contenedores Docker necesarios (`traccar_server` + `traccar-postgres`).
+
+Resumen rápido para desarrollo local (usa el `Dockerfile`/`docker-compose.yml` de la **raíz**, no los de `deploy-traccar/`):
 
 ```powershell
-# 1. Compilar el JAR
+git clone --recurse-submodules <url-del-repo>
+cd traccar
 .\gradlew.bat assemble -x test
-
-# 2. Construir imagen con --no-cache (obligatorio para forzar rebuild del frontend)
-docker build --no-cache -f deploy-traccar/Dockerfile -t traccar-personalizado:local .
-
-# 3. Reiniciar solo el contenedor Traccar (sin tocar BD)
-docker compose -f deploy-traccar/docker-compose.local.yml up -d --no-deps --force-recreate traccar
+docker volume create traccar_data
+docker network create traccar-network
+docker compose up -d --build
 ```
 
-O todo en uno con el script:
-```powershell
-.\deploy-traccar\update-local.ps1
-```
-
-Interfaz web: `http://localhost:8082`  
-Ver guía completa en [deploy-traccar/deploy-local.md](deploy-traccar/deploy-local.md).
-
----
-
-## Deploy a producción (GCloud VM)
-
-```powershell
-# 1. Build + push a GHCR
-.\deploy-traccar\update-local.ps1   # incluye push si estás logueado en ghcr.io
-
-# 2. En la VM de producción (34.61.186.60)
-ssh USUARIO@34.61.186.60
-docker pull ghcr.io/itguinlab-maker/traccar_personalizado:latest
-docker compose -f deploy-traccar/docker-compose.local.yml up -d --no-deps --force-recreate traccar
-```
+Interfaz web: `http://localhost:8082`
 
 ---
 
@@ -216,20 +228,25 @@ docker compose -f deploy-traccar/docker-compose.local.yml up -d --no-deps --forc
 | Puerto | Protocolo | Uso |
 |---|---|---|
 | 8082 | TCP | Interfaz web / API REST |
-| 21081 | TCP/UDP | Protocolo JT808 (GPS Streamax) |
-| 8400 | TCP | Protocolo JT1078 (vídeo streaming) |
+| 6556 | TCP | JT808 — GPS + ignición (con TLS) |
+| 8400 | TCP | JT1078 — vídeo streaming |
+| 21083 | TCP | N9M — canal de control (conteo + comandos de video) |
+| 21720 | TCP | N9M — canal de video |
 
 ---
 
 ## Atributos de dispositivo relevantes
 
+Referencia completa (todos los atributos, incluyendo Hikvision/ISUP) en **[MANUAL_USUARIO.md](MANUAL_USUARIO.md)**, sección 5. Los más comunes:
+
 | Atributo | Valores | Descripción |
 |---|---|---|
-| `mdvrMode` | `jt1078` | Activa descarga de vídeo via JT808/JT1078 (red móvil) |
-| `mdvrIp` | IP | IP del MDVR en WiFi (default: 192.168.1.11) |
-| `mdvrUser` | string | Usuario MDVR (default: admin) |
-| `mdvrPass` | string | Contraseña MDVR (default: admin) |
-| `mdvrTimezone` | TZ ID | Timezone del MDVR (default: GMT-5) |
+| `mdvrMode` | `n9m` | Conteo + video por el protocolo N9M (recomendado) |
+| `mdvrMode` | `jt1078` | Descarga de vídeo vía JT808/JT1078 (sin N9M) |
+| `n9mSerial` | SERIAL/DSNO del equipo | Obligatorio junto con `mdvrMode=n9m` |
+| `apc.forceDoor` | `front` / `rear` | Fuerza el mapeo de puerta si el automático falla |
+| `decoder.timezone` | TZ ID | Timezone del equipo (ej. `America/Bogota`) |
+| `mdvrIp` / `mdvrUser` / `mdvrPass` | IP / string / string | Solo para el modo antiguo de descarga directa por WiFi (sin `mdvrMode`) |
 | `mdvrChannel` | número | Canal por defecto para clips |
 
 ---
