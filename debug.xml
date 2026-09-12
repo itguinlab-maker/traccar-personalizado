@@ -37,4 +37,13 @@
     <entry key='n9m.serverHost'>192.168.1.18</entry>
 
 
+
+    <!-- Anti-duplicados de conteo: el MDVR retransmite eventos ya entregados al reconectar.
+         filterDuplicateStored descarta SOLO el reenvio identico (mismo GPS + mismo conteo +
+         misma puerta); un evento distinto con igual fixTime se conserva marcado como
+         "retransmitted". Sin esto los totales se inflan (medido: +49% en la prueba de campo). -->
+    <entry key='filter.enable'>true</entry>
+    <entry key='filter.duplicate'>true</entry>
+    <entry key='filter.duplicateStored'>true</entry>
+
 </properties>

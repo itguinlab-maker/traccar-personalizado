@@ -14,6 +14,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -203,6 +204,124 @@ public class FilterHandlerTest extends BaseTest {
         event.set("passengersOn", 8);
 
         assertFalse(handler.filter(event));
+    }
+
+    @Test
+    public void testDuplicateNeverFiltersDifferentCountingDoors() {
+
+        var device = mock(Device.class);
+        when(device.getAttributes()).thenReturn(new HashMap<>());
+        var config = mock(Config.class);
+        when(config.getString(Keys.FILTER_DUPLICATE.getKey())).thenReturn("true");
+        var cacheManager = mock(CacheManager.class);
+        when(cacheManager.getConfig()).thenReturn(config);
+        when(cacheManager.getObject(any(), anyLong())).thenReturn(device);
+
+        Date time = new Date();
+        Position last = createPosition(time, true, 0);
+        last.set("passengersOn", 1);
+        last.set("streamax.doorId", 1);
+        when(cacheManager.getPosition(anyLong())).thenReturn(last);
+
+        var handler = new FilterHandler(cacheManager, null, null);
+
+        Position event = createPosition(time, true, 0);
+        event.set("passengersOn", 1);
+        event.set("streamax.doorId", 2);
+
+        assertFalse(handler.filter(event));
+    }
+
+    /**
+     * Un evento que llega en tiempo real debe quedar marcado como {@code live}, para que los
+     * reportes puedan separar lo que llegó al momento de lo recuperado de un reenvío.
+     */
+    @Test
+    public void testLiveEventIsMarked() {
+        var device = mock(Device.class);
+        when(device.getAttributes()).thenReturn(new HashMap<>());
+        var config = mock(Config.class);
+        var cacheManager = mock(CacheManager.class);
+        when(cacheManager.getConfig()).thenReturn(config);
+        when(cacheManager.getObject(any(), anyLong())).thenReturn(device);
+        when(cacheManager.getPosition(anyLong())).thenReturn(null);
+
+        var handler = new FilterHandler(cacheManager, null, null);
+
+        Position event = createPosition(new Date(), true, 0);
+        event.set("passengersOn", 2);
+
+        assertFalse(handler.filter(event));
+        assertEquals(FilterHandler.INGEST_LIVE, event.getString(FilterHandler.INGEST_SOURCE));
+    }
+
+    /**
+     * Caso clave para no perder conteo: el equipo se reconecta y reenvía un evento cuya hora ya
+     * pasó y que NO está guardado (se perdió durante la caída). Debe guardarse, marcado como
+     * {@code backfill}, para poder rellenar el hueco.
+     */
+    @Test
+    public void testBackfillEventIsStoredAndMarked() throws Exception {
+        var device = mock(Device.class);
+        when(device.getAttributes()).thenReturn(new HashMap<>());
+        var config = mock(Config.class);
+        when(config.getString(Keys.FILTER_DUPLICATE_STORED.getKey())).thenReturn("true");
+        var cacheManager = mock(CacheManager.class);
+        when(cacheManager.getConfig()).thenReturn(config);
+        when(cacheManager.getObject(any(), anyLong())).thenReturn(device);
+
+        Date now = new Date();
+        Date past = new Date(now.getTime() - 60000);
+
+        // La última posición conocida es MÁS NUEVA que el evento que llega: es un reenvío.
+        Position last = createPosition(now, true, 0);
+        when(cacheManager.getPosition(anyLong())).thenReturn(last);
+
+        // El almacenamiento no tiene nada con esa hora: el evento se perdió en vivo.
+        var storage = mock(Storage.class);
+        when(storage.getObjects(any(), any())).thenReturn(List.of());
+
+        var handler = new FilterHandler(cacheManager, null, storage);
+
+        Position recovered = createPosition(past, true, 0);
+        recovered.set("passengersOn", 3);
+
+        assertFalse(handler.filter(recovered), "un evento perdido que llega por reenvío NO debe descartarse");
+        assertEquals(FilterHandler.INGEST_BACKFILL, recovered.getString(FilterHandler.INGEST_SOURCE));
+    }
+
+    /**
+     * La contraparte: un reenvío EXACTO de un evento ya guardado (misma huella) sí se descarta,
+     * porque no aporta nada y de lo contrario infla los totales.
+     */
+    @Test
+    public void testExactRetransmissionIsDiscarded() throws Exception {
+        var device = mock(Device.class);
+        when(device.getAttributes()).thenReturn(new HashMap<>());
+        var config = mock(Config.class);
+        when(config.getString(Keys.FILTER_DUPLICATE_STORED.getKey())).thenReturn("true");
+        var cacheManager = mock(CacheManager.class);
+        when(cacheManager.getConfig()).thenReturn(config);
+        when(cacheManager.getObject(any(), anyLong())).thenReturn(device);
+
+        Date now = new Date();
+        Date past = new Date(now.getTime() - 60000);
+        when(cacheManager.getPosition(anyLong())).thenReturn(createPosition(now, true, 0));
+
+        Position stored = createPosition(past, true, 0);
+        stored.set("passengersOn", 3);
+        stored.set("streamax.raw", "{\"UPP\":3}");
+
+        var storage = mock(Storage.class);
+        when(storage.getObjects(any(), any())).thenReturn(List.of(stored));
+
+        var handler = new FilterHandler(cacheManager, null, storage);
+
+        Position duplicate = createPosition(past, true, 0);
+        duplicate.set("passengersOn", 3);
+        duplicate.set("streamax.raw", "{\"UPP\":3}");
+
+        assertTrue(handler.filter(duplicate), "un reenvío idéntico debe descartarse");
     }
 
 }

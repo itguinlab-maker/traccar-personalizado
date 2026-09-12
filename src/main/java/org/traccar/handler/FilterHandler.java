@@ -42,8 +42,21 @@ public class FilterHandler extends BasePositionHandler {
     /** Tolerancia de coordenadas (~1m) para considerar dos posiciones "el mismo punto". */
     private static final double COORDINATE_EPSILON = 0.00001;
 
-    /** Atributos de valor de negocio: si difieren, dos posiciones NUNCA se consideran duplicadas. */
-    private static final String[] BUSINESS_ATTRIBUTES = {"passengersOn", "passengersOff"};
+        /** Atributos de negocio: si difieren, dos posiciones NUNCA se consideran duplicadas. */
+        private static final String[] BUSINESS_ATTRIBUTES = {
+            "passengersOn", "passengersOff", "streamax.doorId", "streamax.raw"};
+
+    /**
+     * Origen de ingesta del evento. Permite distinguir en los reportes qué llegó en tiempo real
+     * y qué se recuperó de un reenvío del equipo tras una caída de conexión.
+     */
+    public static final String INGEST_SOURCE = "streamax.ingest";
+    /** Llegó en tiempo real. */
+    public static final String INGEST_LIVE = "live";
+    /** Llegó con hora pasada y no existía: rellena un hueco dejado por una caída. */
+    public static final String INGEST_BACKFILL = "backfill";
+    /** Reenvío con la misma hora que un evento ya guardado, pero contenido distinto. */
+    public static final String INGEST_RETRANSMITTED = "retransmitted";
 
     private final CacheManager cacheManager;
     private final StatisticsManager statisticsManager;
@@ -87,9 +100,9 @@ public class FilterHandler extends BasePositionHandler {
 
     /**
      * Determina si dos posiciones son el MISMO evento físico: mismo punto GPS y mismo valor en
-     * cada atributo de negocio (conteo de pasajeros). El fixTime se asume ya igual (garantizado
-     * por quien llama). Esta es la única condición para tratar algo como "duplicado exacto" —
-     * cualquier diferencia, por mínima que sea, significa que es un evento real distinto.
+    * cada atributo de negocio (conteo y puerta). El fixTime se asume ya igual (garantizado
+    * por quien llama). Esta es la única condición para tratar algo como "duplicado exacto" —
+    * cualquier diferencia, por mínima que sea, significa que es un evento real distinto.
      */
     private boolean isSameEvent(Position a, Position b) {
         if (Math.abs(a.getLatitude() - b.getLatitude()) > COORDINATE_EPSILON
@@ -121,12 +134,18 @@ public class FilterHandler extends BasePositionHandler {
      * conocida. Filosofía: NUNCA se pierde un evento real, sin importar que sea un reenvío.
      *
      *  - Si no hay ninguna posición guardada con ese (deviceId, fixTime): es histórico legítimo
-     *    (p.ej. buffer tras pérdida de señal) → se guarda normal, sin marcar nada.
-     *  - Si hay una guardada y es EXACTAMENTE el mismo evento (mismo GPS, mismo conteo): es un
-     *    reenvío puro del mismo dato (bucle de retransmisión) → se descarta, no aporta nada nuevo.
+     *    que RELLENA UN HUECO (p.ej. el evento se perdió en vivo y llega en el reenvío tras
+     *    reconectar) → se guarda marcado como {@code backfill}. Este es el caso que permite
+     *    recuperar conteo perdido durante una caída de conexión.
+     *  - Si hay una guardada y es EXACTAMENTE el mismo evento (mismo GPS, mismo conteo, misma
+     *    huella {@code streamax.raw}): es un reenvío puro del mismo dato (bucle de
+     *    retransmisión) → se descarta, no aporta nada nuevo.
      *  - Si hay una guardada pero el contenido difiere en algo (otro GPS, otro conteo): es un
-     *    evento real distinto que casualmente comparte fixTime → se guarda igual, marcado con el
-     *    atributo "retransmitted" para trazabilidad, NUNCA se descarta.
+     *    evento real distinto que casualmente comparte fixTime → se guarda igual, marcado como
+     *    {@code retransmitted}, NUNCA se descarta.
+     *
+     * El marcado de origen se expone en {@code streamax.ingest} para que los reportes puedan
+     * distinguir qué llegó en vivo y qué se recuperó de un reenvío.
      */
     private boolean filterDuplicateStored(Position position, Position last) {
         Boolean filterDuplicateStored = AttributeUtil.lookup(
@@ -140,6 +159,9 @@ public class FilterHandler extends BasePositionHandler {
                                 new Condition.Equals("deviceId", position.getDeviceId()),
                                 new Condition.Equals("fixTime", position.getFixTime()))));
                 if (existing.isEmpty()) {
+                    // Llega con hora pasada y no existe: el equipo está rellenando un evento que
+                    // no alcanzó a entregar en vivo. Es dato recuperado, hay que conservarlo.
+                    position.set(INGEST_SOURCE, INGEST_BACKFILL);
                     return false;
                 }
                 boolean exactDuplicate = existing.stream().anyMatch(stored -> isSameEvent(position, stored));
@@ -147,12 +169,25 @@ public class FilterHandler extends BasePositionHandler {
                     return true;
                 }
                 position.set("retransmitted", true);
+                position.set(INGEST_SOURCE, INGEST_RETRANSMITTED);
                 return false;
             } catch (StorageException e) {
                 LOGGER.warn("DuplicateStored check failed: {}", e.getMessage());
             }
         }
         return false;
+    }
+
+    /**
+     * Marca como {@code live} todo evento que no fue clasificado por {@link #filterDuplicateStored}
+     * (es decir, llegó en tiempo real, con hora posterior a la última conocida). Así TODOS los
+     * eventos quedan con origen explícito y los reportes nunca tienen que interpretar la ausencia
+     * del atributo.
+     */
+    private void markLiveIfUnclassified(Position position) {
+        if (!position.getAttributes().containsKey(INGEST_SOURCE)) {
+            position.set(INGEST_SOURCE, INGEST_LIVE);
+        }
     }
 
     private boolean filterOutdated(Position position) {
@@ -316,7 +351,14 @@ public class FilterHandler extends BasePositionHandler {
             return true;
         }
 
-        if (Boolean.TRUE.equals(position.getAttributes().get("retransmitted"))) {
+        // La posición se conserva: si ningún filtro la clasificó como reenvío o relleno, llegó
+        // en vivo. Se marca aquí para que TODO evento guardado tenga origen explícito.
+        markLiveIfUnclassified(position);
+
+        Object ingest = position.getAttributes().get(INGEST_SOURCE);
+        if (INGEST_BACKFILL.equals(ingest)) {
+            LOGGER.info("Evento recuperado de reenvío (rellena hueco) del equipo: {}", device.getUniqueId());
+        } else if (Boolean.TRUE.equals(position.getAttributes().get("retransmitted"))) {
             LOGGER.info("Position marked as retransmitted (stored anyway) from device: {}", device.getUniqueId());
         }
 

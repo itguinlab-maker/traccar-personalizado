@@ -506,6 +506,11 @@ public class N9mProtocolDecoder extends BaseProtocolDecoder {
         position.set("streamax.eventOff", eventOff);
         position.set("streamax.status", "counting_event");
         position.set("streamax.source", "n9m");
+        // Huella del evento tal como lo mandó el equipo. Es la clave de deduplicación que usa
+        // FilterHandler (ver BUSINESS_ATTRIBUTES): el MDVR retransmite eventos ya entregados al
+        // reconectar, y sin esta huella dos reenvíos del mismo evento solo se distinguían por
+        // GPS+conteo. Medido en campo: la retransmisión inflaba los totales ~49%.
+        position.set("streamax.raw", parameter.toString());
 
         LOGGER.info("N9M APC EVENTO deviceId={} puerta={} on={} off={} lat={} lon={}",
                 deviceId, suffix.toLowerCase(), eventOn, eventOff, lat, lon);
