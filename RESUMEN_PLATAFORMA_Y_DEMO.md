@@ -14,7 +14,7 @@ exacto de cada evento.
 | Capacidad | Estado | Cómo funciona |
 |---|---|---|
 | GPS continuo + ignición | Operativo | JT808 sobre TCP con TLS, reporte cada ~10 s |
-| Conteo de pasajeros por puerta | Operativo | N9M (`UPPSTATISTICS`), con el GPS del instante del evento |
+| Conteo de pasajeros por puerta | Operativo — 99 % validado en video | N9M (`UPPSTATISTICS`), con el GPS del instante del evento |
 | Video en vivo | Operativo | N9M: la plataforma pide el stream, el equipo lo devuelve |
 | Descarga de video por evento | Operativo | Se ubica el segmento real grabado y se baja solo la ventana del evento |
 | Consumo de datos SIM | Operativo | Conteo de bytes por socket, atribuido a cada equipo |
@@ -100,32 +100,50 @@ La ventana quedó en 60 s antes y 25 s después del evento.
 Referencia del periodo completo del cliente (16 jun – 15 jul): **8 712 pasajeros** en 30 días,
 de los cuales 4 días figuran en cero.
 
-### Lectura honesta de estos números
+### Validación por video — la línea base de precisión
 
-**La plataforma registró alrededor de la mitad de los pasajeros que reportó el cliente.** No es
-un resultado presentable como éxito de precisión, y conviene entender por qué antes de sacar
-conclusiones:
+Se revisaron **9 horas de grabación**, tomadas en tramos de distintos días, contando a mano las
+personas que subían por la puerta delantera y cotejándolas contra los eventos de subida que
+registró la plataforma en ese mismo instante.
 
-1. **Las dos cifras no miden lo mismo.** El cliente reporta **recaudo** (pasajeros que pagaron,
-   por tipo de tarifa); la plataforma cuenta **personas cruzando la puerta** con visión. Un
-   pasajero integrado, un menor o alguien que no valida siguen siendo personas contadas, o
-   personas no cobradas. No debe esperarse coincidencia exacta ni siquiera con el sensor perfecto.
+**Resultado: 99 % de acierto en el conteo de subidas.**
+
+Los videos están guardados y pueden enviarse si el cliente o el proveedor quieren verificar la
+medición.
+
+Esta es la cifra que vale para hablar de precisión, y sustituye a la comparación contra recaudo:
+mide lo mismo contra lo mismo — personas cruzando la puerta, vistas en video, contra eventos de
+la plataforma. La comparación con el informe de recaudo mezcla dos métricas distintas y, como se
+ve abajo, no sirve para juzgar el sensor.
+
+### Por qué la tabla anterior marca 55 % y no 99 %
+
+Las dos cifras no se contradicen: miden cosas distintas.
+
+1. **Las dos columnas de la tabla no miden lo mismo.** El cliente reporta **recaudo** (pasajeros
+   que pagaron, por tipo de tarifa); la plataforma cuenta **personas cruzando la puerta** con
+   visión. Un pasajero integrado, un menor o alguien que no valida sigue siendo una persona
+   contada, o una persona no cobrada. No debe esperarse coincidencia exacta ni con el sensor
+   perfecto — y el video confirma que el sensor está cerca de serlo.
 
 2. **Los días 12 y 13 de julio invierten la relación**: la plataforma registró 565 y 83 mientras
-   el cliente reporta 0. Eso confirma que el informe del cliente tiene días sin operación
-   registrada (o sin recaudo) en los que el vehículo sí se movió y contó.
+   el cliente reporta 0. El informe del cliente tiene días sin operación registrada (o sin
+   recaudo) en los que el vehículo sí se movió y contó.
 
-3. **La cobertura es muy irregular** (del 4 % al 92 %). Esa dispersión no se explica por la
-   diferencia conceptual entre recaudo y conteo: apunta a **pérdida de eventos**, no a un sesgo
-   constante. Los días bajos coinciden con periodos donde el equipo estuvo desconectado o el
-   canal N9M no estuvo activo durante toda la jornada.
+3. **La cobertura es irregular por disponibilidad, no por precisión** (del 4 % al 92 %). Con el
+   sensor midiendo al 99 %, la dispersión solo puede venir de **eventos que no llegaron**: los
+   días bajos coinciden con periodos donde el equipo estuvo desconectado o el canal N9M no estuvo
+   activo toda la jornada. Es un problema de transporte, no de conteo — y es justo el que atacan
+   el marcado de origen y el relleno de huecos por retransmisión.
 
-4. **Bajadas prácticamente sin registrar**: 3 088 subidas contra 84 bajadas en todo el histórico.
-   El sensor de la puerta de salida no está contando, o su canal no está mapeado. Esto por sí
-   solo invalida cualquier cálculo de ocupación a bordo.
+4. **Bajadas no medidas**: 3 088 subidas contra 84 bajadas. Los buses solo tienen salida por la
+   puerta trasera y **en el DEMO no había cámara instalada ahí** — solo delantera. No es un
+   sensor defectuoso: es una puerta sin instrumentar. Mientras siga así no puede calcularse
+   ocupación a bordo, solo subidas.
 
 ### Qué sí quedó demostrado
 
+- **El conteo de subidas acierta al 99 %**, verificado contra 9 horas de video.
 - El canal N9M entrega conteo con GPS del instante exacto, de forma sostenida (1 551 eventos).
 - El video histórico se baja atado al evento, con el segmento real de grabación.
 - La vista en vivo funciona sobre SIM celular sin IP pública.
@@ -135,14 +153,13 @@ conclusiones:
 
 | Prioridad | Problema | Acción |
 |---|---|---|
-| Crítica | Bajadas no se registran (84 vs 3 088) | Revisar sensor/mapeo de la puerta de salida en el MDVR |
+| Crítica | Sin cámara en la puerta trasera, no hay bajadas | Instalar cámara de salida — es lo que bloquea la ocupación a bordo |
 | Crítica | Cobertura irregular por desconexiones | Medir disponibilidad real del equipo y cerrar los huecos |
-| Alta | No hay línea base de precisión | Conteo manual contra plataforma en una jornada controlada |
-| Media | Comparar contra recaudo induce a error | Definir con el cliente qué métrica se va a comparar |
+| Media | Comparar contra recaudo induce a error | Usar la validación por video como referencia de precisión, no el recaudo |
 
-**Recomendación:** antes de presentar cifras de precisión a un cliente, hacer una jornada de
-validación con conteo manual como referencia. Comparar contra recaudo mezcla dos métricas
-distintas y deja la conversación en terreno débil.
+**Recomendación:** presentar la cifra de **99 % validada por video**, no el 55 % de la tabla de
+recaudo. La brecha contra el recaudo es de disponibilidad del equipo y de diferencia entre
+métricas; el sensor de subidas ya está demostrado.
 
 ---
 

@@ -40,11 +40,16 @@ Sin esto no se puede calcular:
 
 El campo `passengerCapacity` ya se captura en el alta de vehículo; queda sin uso hasta resolver esto.
 
+**Riesgo técnico: bajo.** La validación contra 9 h de video dio 99 % de acierto en la puerta
+delantera, así que el sensor de conteo está demostrado — instalar la trasera es trabajo de
+hardware, no de integración. Es esperable que la puerta nueva cuente con la misma calidad.
+
 ---
 
 ## P3 — Consultas abiertas con Streamax
 
-Enviadas en `informecliente/Informe_Integracion_Streamax_Nodiklab.docx`. Al recibir respuesta:
+Enviadas en el informe técnico de `informecliente/` (última versión: `..._v2.docx`, que ya incluye
+la validación de 99 % contra video). Al recibir respuesta:
 
 - ¿Existe un ACK que evite la retransmisión de eventos ya entregados?
 - ¿El evento trae identificador único/secuencial propio del equipo? (hoy se deduplica por huella

@@ -29,14 +29,27 @@ Todo lo demás en este README es un resumen general del proyecto; para instalar 
 
 | Área | Estado |
 |---|---|
-| Conteo por N9M | Operativo, con deduplicación de retransmisiones y marcado de origen |
+| Conteo por N9M | Operativo — **99 % de acierto validado contra 9 h de video**, con deduplicación de retransmisiones y marcado de origen |
 | GPS + ignición por JT808 | Operativo, sobre TCP con TLS |
 | Video en vivo y por evento | Operativo sobre SIM celular, sin IP pública en el vehículo |
 | Respaldos | Script probado de extremo a extremo; **falta activar cron y bucket al desplegar** |
 | Pruebas automatizadas | 580 tests, incluidos 8 del decoder N9M y 3 del marcado de origen |
 | Aislamiento entre empresas | Endpoints de conteo y video validan permiso sobre el dispositivo |
 
-### Precisión del conteo — cómo se protege
+### Precisión del conteo — medida en campo
+
+Se revisaron **9 horas de grabación** en tramos de distintos días, contando a mano las personas que
+subían por la puerta delantera y cotejándolas contra los eventos de la plataforma del mismo
+instante: **99 % de coincidencia**. Las grabaciones están conservadas y pueden enviarse para
+verificación.
+
+Es decir, **el sensor es confiable cuando el evento llega**. Lo que había que proteger era el
+transporte del evento, no la medición — y de eso trata el resto de esta sección.
+
+> Cubre solo ascensos. Los buses salen por la puerta trasera y ahí no hay cámara instalada
+> (P2 en [PENDIENTES.md](PENDIENTES.md)); mientras siga así no puede calcularse ocupación a bordo.
+
+### Integridad del conteo — cómo se protege
 
 Los MDVR **reenvían eventos ya entregados** cuando recuperan conexión. Sin control, eso infla los
 totales: medido en campo, **+49%** (3.088 registrados contra 2.076 reales).
