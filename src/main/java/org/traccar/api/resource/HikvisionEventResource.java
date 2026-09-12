@@ -9,8 +9,6 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.core.Context;
-import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
@@ -22,7 +20,9 @@ import org.traccar.config.Keys;
 import org.traccar.hikvision.HikvisionEvent;
 import org.traccar.hikvision.HikvisionEventService;
 import org.traccar.model.Device;
+import org.traccar.model.User;
 import org.traccar.session.ConnectionManager;
+import org.traccar.storage.StorageException;
 import org.traccar.storage.query.Columns;
 import org.traccar.storage.query.Condition;
 import org.traccar.storage.query.Request;
@@ -39,6 +39,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Path("hikvision")
 @Produces(MediaType.APPLICATION_JSON)
@@ -75,12 +77,28 @@ public class HikvisionEventResource extends BaseResource {
     public Response getEvents(
             @QueryParam("deviceId") long deviceId,
             @QueryParam("from") String fromIso,
-            @QueryParam("to") String toIso) {
+            @QueryParam("to") String toIso) throws StorageException {
         Instant from = parseInstant(fromIso);
         Instant to   = parseInstant(toIso);
-        List<HikvisionEvent> result = deviceId > 0
-                ? service.getByDevice(deviceId, from, to)
-                : service.getAll();
+
+        List<HikvisionEvent> result;
+        if (deviceId > 0) {
+            // Sin esto, cualquier usuario autenticado podía leer los eventos de conteo de
+            // CUALQUIER empresa cambiando el deviceId de la URL.
+            permissionsService.checkPermission(Device.class, getUserId(), deviceId);
+            result = service.getByDevice(deviceId, from, to);
+        } else {
+            // Antes se devolvía service.getAll() (todas las empresas). Ahora se limita a los
+            // dispositivos sobre los que el usuario tiene permiso efectivo.
+            Set<Long> allowed = storage.getObjects(Device.class, new Request(
+                            new Columns.Include("id"),
+                            new Condition.Permission(User.class, getUserId(), Device.class)))
+                    .stream().map(Device::getId).collect(Collectors.toSet());
+            result = service.getAll().stream()
+                    .filter(e -> allowed.contains(e.getDeviceId()))
+                    .toList();
+        }
+
         LOGGER.info("HIK GET events deviceId={} from={} to={} resultados={}", deviceId, fromIso, toIso, result.size());
         return Response.ok(result).build();
     }
@@ -148,11 +166,15 @@ public class HikvisionEventResource extends BaseResource {
             @QueryParam("deviceId") long deviceId,
             @QueryParam("from") String fromIso,
             @QueryParam("to") String toIso,
-            @DefaultValue("1") @QueryParam("channel") int channel) {
+            @DefaultValue("1") @QueryParam("channel") int channel) throws StorageException {
 
         if (deviceId <= 0 || fromIso == null || toIso == null) {
             return Response.status(Response.Status.BAD_REQUEST).entity("deviceId, from, to requeridos").build();
         }
+
+        // El video es el dato más sensible de la plataforma: sin esta comprobación cualquier
+        // usuario autenticado podía descargar grabaciones de vehículos de otra empresa.
+        permissionsService.checkPermission(Device.class, getUserId(), deviceId);
 
         Device device;
         try {
@@ -317,21 +339,6 @@ public class HikvisionEventResource extends BaseResource {
                 .header("Content-Type", "video/mp4")
                 .header("Cache-Control", "no-store, no-cache")
                 .build();
-    }
-
-    @POST
-    @Path("rawdump")
-    @PermitAll
-    @Consumes(MediaType.WILDCARD)
-    public Response rawDump(@Context HttpHeaders headers, InputStream body) throws Exception {
-        byte[] raw = body.readAllBytes();
-        String bodyStr = new String(raw, StandardCharsets.UTF_8);
-        StringBuilder sb = new StringBuilder("HIKDUMP headers:");
-        headers.getRequestHeaders().forEach((k, v) -> sb.append(" [").append(k).append("=").append(v).append("]"));
-        sb.append(" | body(").append(raw.length).append("B): ");
-        sb.append(bodyStr.length() > 2000 ? bodyStr.substring(0, 2000) + "…" : bodyStr);
-        LOGGER.info("{}", sb);
-        return Response.ok().build();
     }
 
     private String extractXml(String bodyStr) {
