@@ -1,6 +1,8 @@
-# Traccar Personalizado
+# Nodiklab CCTV
 
-> Fork de [Traccar](https://www.traccar.org) v6.13.3 con extensiones para flotas de transporte público con dispositivos **Streamax MDVR** (protocolos N9M + JT808, conteo de pasajeros + video) y cámaras **Hikvision**.
+> Plataforma de **CCTV con auditoría de pasajeros** para flotas de transporte público.
+> Fork de [Traccar](https://www.traccar.org) v6.13.3 con soporte para **Streamax MDVR**
+> (protocolos N9M + JT808) y cámaras **Hikvision**.
 
 ---
 
@@ -11,13 +13,51 @@ Guías operativas, en el orden en que normalmente se necesitan al instalar/confi
 | # | Documento | Para qué sirve |
 |---|---|---|
 | 1 | [GUIA_DESPLIEGUE_NUBE.md](GUIA_DESPLIEGUE_NUBE.md) | Levantar el servidor desde cero en una VM en la nube — todas las dependencias, todos los contenedores Docker |
-| 2 | [GUIA_INTEGRACION_MDVR.md](GUIA_INTEGRACION_MDVR.md) | Conectar un MDVR Streamax al servidor (protocolos N9M + JT808) y darlo de alta en la plataforma |
-| 3 | [GUIA_CAMARAS_HIKVISION_STREAMAX.md](GUIA_CAMARAS_HIKVISION_STREAMAX.md) | Configurar cámaras Hikvision y los canales del MDVR para que manden conteo y video a la plataforma |
-| 4 | [MANUAL_USUARIO.md](MANUAL_USUARIO.md) | Uso de la plataforma: empresas/roles, alta de vehículos, referencia de atributos de dispositivo, páginas principales |
-| 5 | [USER_MANAGEMENT.md](USER_MANAGEMENT.md) | Detalle fino de permisos por rol (qué ve/edita cada uno, menú por menú) |
-| 6 | [STREAMAX_APC_DOCUMENTATION.md](STREAMAX_APC_DOCUMENTATION.md) | Referencia técnica a nivel de protocolo/backend del conteo APC — para quien vaya a tocar el código, no para instalar |
+| 2 | [RESPALDOS.md](RESPALDOS.md) | Respaldo y restauración de datos, cron diario y bucket externo. **Configurar al desplegar** |
+| 3 | [GUIA_INTEGRACION_MDVR.md](GUIA_INTEGRACION_MDVR.md) | Conectar un MDVR Streamax al servidor (protocolos N9M + JT808) y darlo de alta en la plataforma |
+| 4 | [GUIA_CAMARAS_HIKVISION_STREAMAX.md](GUIA_CAMARAS_HIKVISION_STREAMAX.md) | Configurar cámaras Hikvision y los canales del MDVR para que manden conteo y video a la plataforma |
+| 5 | [MANUAL_USUARIO.md](MANUAL_USUARIO.md) | Uso de la plataforma: empresas/roles, alta de vehículos, referencia de atributos de dispositivo, páginas principales |
+| 6 | [USER_MANAGEMENT.md](USER_MANAGEMENT.md) | Detalle fino de permisos por rol (qué ve/edita cada uno, menú por menú) |
+| 7 | [PENDIENTES.md](PENDIENTES.md) | Trabajo acordado y no implementado, con su prioridad y motivo |
+| 8 | [STREAMAX_APC_DOCUMENTATION.md](STREAMAX_APC_DOCUMENTATION.md) | Referencia técnica a nivel de protocolo/backend del conteo APC — para quien vaya a tocar el código, no para instalar |
 
 Todo lo demás en este README es un resumen general del proyecto; para instalar o configurar algo puntual, usa la tabla de arriba.
+
+---
+
+## Estado del sistema
+
+| Área | Estado |
+|---|---|
+| Conteo por N9M | Operativo, con deduplicación de retransmisiones y marcado de origen |
+| GPS + ignición por JT808 | Operativo, sobre TCP con TLS |
+| Video en vivo y por evento | Operativo sobre SIM celular, sin IP pública en el vehículo |
+| Respaldos | Script probado de extremo a extremo; **falta activar cron y bucket al desplegar** |
+| Pruebas automatizadas | 580 tests, incluidos 8 del decoder N9M y 3 del marcado de origen |
+| Aislamiento entre empresas | Endpoints de conteo y video validan permiso sobre el dispositivo |
+
+### Precisión del conteo — cómo se protege
+
+Los MDVR **reenvían eventos ya entregados** cuando recuperan conexión. Sin control, eso infla los
+totales: medido en campo, **+49%** (3.088 registrados contra 2.076 reales).
+
+La plataforma lo maneja en dos capas:
+
+1. **Huella del evento** (`streamax.raw`): guarda el payload exacto que mandó el equipo, lo que
+   permite saber si dos tramas son la misma.
+2. **Filtros** (`filter.duplicate` y `filter.duplicateStored`, activos en la configuración): un
+   reenvío idéntico se descarta; un evento distinto **nunca** se pierde.
+
+Cada evento guardado queda marcado en `streamax.ingest` con su origen:
+
+| Valor | Significado | ¿Cuenta? |
+|---|---|---|
+| `live` | Llegó en tiempo real | Sí |
+| `backfill` | Se perdió en vivo y el equipo lo reenvió al reconectar — **rellena el hueco** | Sí |
+| `retransmitted` | Misma hora que otro evento, contenido distinto | Sí, marcado |
+| *(descartado)* | Reenvío idéntico | No |
+
+Visible en la columna **Origen** de Streamax Eventos de Conteo.
 
 ---
 
@@ -162,10 +202,13 @@ La plataforma soporta múltiples empresas con separación total de datos. Ver gu
 4. Admin de empresa registra sus vehículos seleccionando el grupo `TRSC`
 5. Los dispositivos quedan asignados al grupo automáticamente
 
-### 7. Identidad visual (CountinG&KLAB)
+### 7. Identidad visual (Nodiklab)
 
-- Nombre de plataforma: **CountinG&KLAB v1.0.2**
-- Logo: `gnklab01.png` en pantalla de login y app
+- Nombre de plataforma: **CCTV-NODIKLAB v1.0.2** (definido en `OverrideTextFilter.java`; el
+  administrador puede sobrescribirlo con los atributos `title`/`description` del servidor)
+- Logo: `traccar-web/src/resources/images/nodiklab.png` — PNG con fondo transparente, usado en
+  login y app. Se dimensiona **por ancho** (`LogoImage.jsx`): es apaisado (≈3:2) y con
+  `height:100%` quedaba aplastado en el panel lateral vertical
 - Paleta: `#5B8DB8` (primary), `#78909C` (secondary)
 - Modo oscuro forzado: `bg #121212`, paper `#1E1E1E`
 - Sidebar del login con gradiente azul oscuro

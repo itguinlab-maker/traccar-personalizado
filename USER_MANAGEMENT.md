@@ -1,4 +1,4 @@
-# Gestión de Usuarios y Roles — CountinG&KLAB
+# Gestión de Usuarios y Roles — Nodiklab CCTV
 
 Este documento describe el sistema de roles, cómo crear usuarios por empresa y qué puede ver/hacer cada rol.
 

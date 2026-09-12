@@ -1,6 +1,6 @@
 # Guía de despliegue en la nube
 
-Cómo poner el servidor CountinG&KLAB a correr en una VM en la nube, desde cero, usando el flujo **actual** del repo (raíz: `Dockerfile` + `docker-compose.yml`, con TLS de JT808 y N9M ya integrados).
+Cómo poner el servidor Nodiklab CCTV a correr en una VM en la nube, desde cero, usando el flujo **actual** del repo (raíz: `Dockerfile` + `docker-compose.yml`, con TLS de JT808 y N9M ya integrados).
 
 > **Nota sobre otros documentos de despliegue en este repo**: `deploy-traccar/deploy-gke.md`, `deploy-traccar/deploy-local.md` y los manifiestos en `deploy-traccar/k8s/` describen una ruta de despliegue **más vieja y desactualizada** — usan el puerto JT808 21081 (hoy es 6556), no tienen TLS, y no incluyen N9M en absoluto. Esta guía documenta la ruta **actual** (`Dockerfile`/`docker-compose.yml` en la raíz del repo, tocados por última vez el 2026-08-18). No mezcles los dos flujos.
 
@@ -71,7 +71,7 @@ El `Dockerfile` copia `jt808-keystore.p12` desde la raíz del repo — este arch
 keytool -genkeypair -alias traccar-jt808 -keyalg RSA -keysize 2048 -validity 3650 ^
   -keystore jt808-keystore.p12 -storetype PKCS12 ^
   -storepass <elige-una-clave> -keypass <elige-una-clave> ^
-  -dname "CN=traccar-jt808, O=CountinGKLAB, C=CO"
+  -dname "CN=traccar-jt808, O=Nodiklab, C=CO"
 ```
 
 Colócalo en la raíz del repo (junto a `Dockerfile`). Si usas una contraseña distinta a `traccar123`, actualiza también `JAVA_TOOL_OPTIONS` en `docker-compose.yml` (ver 1.4).
@@ -223,6 +223,14 @@ La imagen trae `debug.xml` incluido, pero es explícitamente modo desarrollo (`w
     <entry key='n9m.serverHost'>&lt;IP-PUBLICA-O-DOMINIO&gt;</entry>
 
     <entry key='decoder.timezone'>America/Bogota</entry>
+
+    <!-- Anti-duplicados de conteo. Los MDVR reenvían eventos ya entregados al reconectar:
+         sin estos filtros los totales se inflan (medido en campo: +49%). Descarta solo el
+         reenvío idéntico; un evento distinto nunca se pierde, y el que rellena un hueco
+         queda marcado como "backfill". -->
+    <entry key='filter.enable'>true</entry>
+    <entry key='filter.duplicate'>true</entry>
+    <entry key='filter.duplicateStored'>true</entry>
 </properties>
 ```
 
@@ -282,6 +290,24 @@ Esto no toca la base de datos ni el volumen de datos — solo reemplaza el conte
 
 ---
 
+## 3.5 Activar los respaldos — obligatorio antes de recibir datos reales
+
+**Este paso no es opcional.** Este proyecto ya perdió datos una vez por no tener respaldo externo.
+
+1. Programar el respaldo diario (cron) — ver [RESPALDOS.md](RESPALDOS.md).
+2. Crear el bucket externo y la cuenta de servicio con permiso **solo de escritura**.
+3. Verificar a la semana que realmente están subiendo archivos.
+
+```sh
+# Prueba inmediata tras desplegar: debe generar un .tar.gz y verificar el dump
+sh scripts/backup.sh
+```
+
+Los respaldos incluyen la base de datos **y** los archivos JSON de `/opt/traccar/data`
+(fichas de vehículos, eventos Hikvision, consumo SIM), que no están en PostgreSQL.
+
+---
+
 ## 4. Checklist de seguridad antes de ir a producción real
 
 - [ ] Cambiar la contraseña de PostgreSQL (`traccar123` es la que trae el repo por defecto — cámbiala en `docker-compose.yml` y en tu `traccar.xml`).
@@ -289,6 +315,9 @@ Esto no toca la base de datos ni el volumen de datos — solo reemplaza el conte
 - [ ] Usar HTTPS real para la interfaz web (esta guía deja `web.url` en `http://`; para HTTPS hace falta un proxy inverso como nginx/Caddy con un certificado de Let's Encrypt delante del puerto 8082 — no cubierto aquí, es una capa adicional sobre esta VM).
 - [ ] Confirmar que estás usando el `traccar.xml` de producción (paso 2.8), no `debug.xml`.
 - [ ] Reservar la IP como estática (paso 2.2) — si es efímera, cambia al reiniciar la VM y rompe la configuración de cada DVR/cámara.
+- [ ] **Activar los filtros anti-duplicados** en el `traccar.xml` de producción — sin ellos los totales de conteo se inflan (medido: +49%):
+      `filter.enable`, `filter.duplicate` y `filter.duplicateStored` en `true`.
+- [ ] **Respaldo diario programado y subiendo al bucket externo** (sección 3.5).
 
 ---
 

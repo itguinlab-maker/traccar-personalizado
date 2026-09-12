@@ -1,4 +1,4 @@
-# Manual de usuario — CountinG&KLAB
+# Manual de usuario — Nodiklab CCTV
 
 Guía de referencia de toda la plataforma: empresas, roles, alta de vehículos, atributos de dispositivo y las páginas que vas a usar en el día a día. Complementa a [GUIA_INTEGRACION_MDVR.md](GUIA_INTEGRACION_MDVR.md) (que cubre solo la parte de conectar un MDVR Streamax) — este manual cubre la plataforma completa.
 
@@ -121,6 +121,22 @@ Estos son específicos de la integración Streamax y no tienen selector propio t
 | Estado de SIM (consumo de datos) | `/settings/sim-status` | Configuración → Estado de SIM | Administrador, `admin_empresa`, `supervisor`, `supervisor_global` |
 | Empresas | `/settings/companies` | Configuración → Empresas | Administrador |
 | Alta guiada de vehículo | `/settings/vehicles/new` | Configuración → Vehículos → Alta guiada | Administrador |
+
+### Origen de cada evento de conteo
+
+En **Streamax Eventos de Conteo**, la columna **Origen** indica cómo llegó cada evento:
+
+| Etiqueta | Significado |
+|---|---|
+| **En vivo** | Llegó en tiempo real, mientras el equipo estaba conectado |
+| **Recuperado** | El equipo lo reenvió tras recuperar conexión: rellena un hueco que dejó una caída. **Cuenta igual que un evento en vivo** |
+| **Reenvío** | Llegó con la misma hora que otro evento ya registrado, pero con contenido distinto |
+| **—** | Evento anterior a esta funcionalidad |
+
+Los equipos MDVR reenvían eventos cuando recuperan conexión. La plataforma **descarta los
+reenvíos idénticos** (no inflan los totales) pero **conserva los eventos que se habían perdido**,
+marcándolos como "Recuperado". Así un tramo sin cobertura no significa conteo perdido: cuando el
+vehículo vuelve a tener señal, esos eventos se rellenan solos.
 
 ### Descarga de clips de video
 

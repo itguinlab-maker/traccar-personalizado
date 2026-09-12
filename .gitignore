@@ -14,3 +14,9 @@ build
 .vscode
 bin
 *.p12
+
+# Respaldos: contienen datos reales de clientes (conteo, usuarios, vehículos).
+# Nunca deben versionarse — su destino es el bucket externo, ver RESPALDOS.md
+backups/
+*.dump
+*.tar.gz
